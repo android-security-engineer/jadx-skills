@@ -135,4 +135,44 @@ class CommandsTest {
 		}
 		return baos.toString();
 	}
+
+	@Test
+	void testClassDetailWithNewFields() {
+		String output = runCommand("class-detail", "-c", "Hello", testDex.getAbsolutePath());
+		assertNotNull(output);
+		assertTrue(output.contains("\"success\""), "Should contain success field: " + output);
+		assertTrue(output.contains("\"rawName\""), "Should contain rawName: " + output);
+		assertTrue(output.contains("\"isClassInit\""), "Should contain isClassInit: " + output);
+		assertTrue(output.contains("\"defPos\""), "Should contain defPos: " + output);
+	}
+
+	@Test
+	void testUsageWithUnresolvedUsed() {
+		String output = runCommand("usage", "-c", "Hello", "-m", "main", testDex.getAbsolutePath());
+		assertNotNull(output);
+		assertTrue(output.contains("\"success\""), "Should contain success field: " + output);
+		assertTrue(output.contains("\"unresolvedUsed\""), "Should contain unresolvedUsed: " + output);
+	}
+
+	@Test
+	void testSearchAlias() {
+		String output = runCommand("search", "-t", "alias", "-q", "Hello", testDex.getAbsolutePath());
+		assertNotNull(output);
+		assertTrue(output.contains("\"success\""), "Should contain success field: " + output);
+	}
+
+	@Test
+	void testLineMapWithUsageMap() {
+		String output = runCommand("line-map", "-c", "Hello", "--usage-map", testDex.getAbsolutePath());
+		assertNotNull(output);
+		assertTrue(output.contains("\"success\""), "Should contain success field: " + output);
+		assertTrue(output.contains("\"usageMap\""), "Should contain usageMap: " + output);
+	}
+
+	@Test
+	void testListWithInners() {
+		String output = runCommand("list", "-t", "classes", "--with-inners", testDex.getAbsolutePath());
+		assertNotNull(output);
+		assertTrue(output.contains("\"success\""), "Should contain success field: " + output);
+	}
 }

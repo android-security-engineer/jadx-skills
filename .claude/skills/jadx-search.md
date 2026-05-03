@@ -38,7 +38,7 @@ jadx-ai search -t <type> -q <query> [--exact] [--limit N] <input-file>
 | `class` | Class full names and simple names | fullName, simpleName, packageName |
 | `method` | Method names | className, methodName |
 | `field` | Field names | className, fieldName |
-| `string` | String constants in source code | className, matchingLine |
+| `alias` | Class/method aliases (deobfuscated names) | fullName, aliasName |
 
 ## Examples
 

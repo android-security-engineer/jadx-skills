@@ -33,8 +33,8 @@ jadx-ai class-detail -c <class-name> <input-file>
 - accessFlags (raw int), accessStr (e.g. "public final")
 - declaringClass, topParentClass
 - innerClasses, inlinedClasses (list of full names)
-- methods: name, returnType, arguments, isConstructor, accessFlags, accessStr
-- fields: name, type, accessFlags, accessStr
+- methods: name, returnType, arguments, isConstructor, isClassInit, defPos, accessFlags, accessStr
+- fields: name, rawName, type, defPos, accessFlags, accessStr
 - dependencies (list of class full names this class depends on)
 - totalDepsCount
 - codeParent (class that contains this class's code, differs for anonymous/inlined)

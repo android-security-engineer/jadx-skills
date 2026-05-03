@@ -17,7 +17,7 @@ When the user asks about line number mapping, source line tracing, or code annot
 ## Command
 
 ```bash
-jadx-ai line-map -c <class-name> [--annotations] <input-file>
+jadx-ai line-map -c <class-name> [--annotations] [--usage-map] <input-file>
 ```
 
 ## Parameters
@@ -27,6 +27,14 @@ jadx-ai line-map -c <class-name> [--annotations] <input-file>
 | `<input-file>` | Yes | Path to APK, DEX file |
 | `-c, --class` | Yes | Full class name |
 | `--annotations` | No | Include code annotations (node refs at each position) |
+| `--usage-map` | No | Include usage map (position → node mapping) |
+
+## Output Fields
+
+- className: full class name
+- lineMap: list of {decompiledLine, sourceLine} mappings
+- annotations: (with --annotations) list of {position, type, nodeFullName, nodeType}
+- usageMap: (with --usage-map) list of {position, nodeFullName, nodeType}
 
 ## Examples
 
@@ -36,4 +44,7 @@ jadx-ai line-map -c com.example.MyClass app.apk
 
 # Get line mapping with annotations
 jadx-ai line-map -c com.example.MyClass --annotations app.apk
+
+# Get line mapping with usage map
+jadx-ai line-map -c com.example.MyClass --usage-map app.apk
 ```

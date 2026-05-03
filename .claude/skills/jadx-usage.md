@@ -35,6 +35,7 @@ jadx-ai usage -c <class> [-m <method>] [-f <field>] [-t <type>] <input-file>
 - target, targetType, queryType, references
 - overrideRelatedMethods: list of methods that override/are overridden by this method
 - callsSelf: true if the method is recursive
+- unresolvedUsed: list of unresolved method references used by this method
 
 ## Examples
 

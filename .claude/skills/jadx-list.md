@@ -18,7 +18,7 @@ When the user asks to explore, browse, or list the structure of an Android app:
 ## Command
 
 ```bash
-jadx-ai list -t <type> [-p <package>] [-c <class>] [-v] <input-file>
+jadx-ai list -t <type> [-p <package>] [-c <class>] [-v] [--with-inners] <input-file>
 ```
 
 ## Parameters
@@ -30,6 +30,7 @@ jadx-ai list -t <type> [-p <package>] [-c <class>] [-v] <input-file>
 | `-p, --package` | No | Filter by package name |
 | `-c, --class` | No | Class name (required for methods/fields) |
 | `-v, --verbose` | No | Show detailed package info (fullName, rawName, classCount, isLeaf, subPackageCount) |
+| `--with-inners` | No | Include inner classes in class listing |
 
 ## Examples
 
