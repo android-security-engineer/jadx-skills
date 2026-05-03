@@ -74,6 +74,7 @@ public class ClassDetailCommand extends AbstractCommand {
 				md.arguments.add(arg.toString());
 			}
 			md.isConstructor = m.isConstructor();
+			md.isClassInit = m.isClassInit();
 			md.accessFlags = m.getAccessFlags().rawValue();
 			md.accessStr = m.getAccessFlags().toString();
 			detail.methods.add(md);
@@ -131,14 +132,18 @@ public class ClassDetailCommand extends AbstractCommand {
 		String returnType;
 		List<String> arguments;
 		boolean isConstructor;
+		boolean isClassInit;
 		int accessFlags;
 		String accessStr;
+		int defPos;
 	}
 
 	static class FieldDetail {
 		String name;
+		String rawName;
 		String type;
 		int accessFlags;
 		String accessStr;
+		int defPos;
 	}
 }

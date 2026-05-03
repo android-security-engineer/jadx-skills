@@ -29,6 +29,9 @@ public class ListCommand extends AbstractCommand {
 	@Option(names = { "-v", "--verbose" }, description = "Show detailed package info")
 	protected boolean verbose;
 
+	@Option(names = { "--with-inners" }, description = "Include inner classes in listing")
+	protected boolean withInners;
+
 	@Override
 	protected Object execute(JadxDecompiler decompiler) throws Exception {
 		switch (listType.toLowerCase()) {

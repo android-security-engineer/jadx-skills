@@ -99,6 +99,10 @@ public class UsageCommand extends AbstractCommand {
 			result.overrideRelatedMethods.add(override.getFullName());
 		}
 		result.callsSelf = mth.callsSelf();
+		result.unresolvedUsed = new ArrayList<>();
+		for (jadx.api.plugins.input.data.IMethodRef ref : mth.getUnresolvedUsed()) {
+			result.unresolvedUsed.add(ref.toString());
+		}
 		return JsonOutput.ok(result);
 	}
 
@@ -148,6 +152,7 @@ public class UsageCommand extends AbstractCommand {
 		List<UsageRef> references;
 		List<String> overrideRelatedMethods;
 		boolean callsSelf;
+		List<String> unresolvedUsed;
 	}
 
 	static class UsageRef {
