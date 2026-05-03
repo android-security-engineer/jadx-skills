@@ -141,6 +141,8 @@ public class UsageCommand extends AbstractCommand {
 		String targetType;
 		String queryType;
 		List<UsageRef> references;
+		List<String> overrideRelatedMethods;
+		boolean callsSelf;
 	}
 
 	static class UsageRef {
