@@ -15,7 +15,7 @@ import jadx.api.JavaMethod;
 @Command(name = "search", description = "Search for classes, methods, fields, or strings")
 public class SearchCommand extends AbstractCommand {
 
-	@Option(names = { "-t", "--type" }, description = "Search type: class, method, field, string", required = true)
+	@Option(names = { "-t", "--type" }, description = "Search type: class, method, field, string, alias", required = true)
 	protected String searchType;
 
 	@Option(names = { "-q", "--query" }, description = "Search query (substring match)", required = true)
@@ -40,7 +40,7 @@ public class SearchCommand extends AbstractCommand {
 				return searchStrings(decompiler);
 			default:
 				return JsonOutput.error("InvalidSearchType",
-						"Unknown search type: " + searchType + ". Use: class, method, field, string");
+						"Unknown search type: " + searchType + ". Use: class, method, field, string, alias");
 		}
 	}
 
@@ -135,6 +135,19 @@ public class SearchCommand extends AbstractCommand {
 			if (results.size() >= limit) {
 				break;
 			}
+		}
+		return JsonOutput.list(results);
+	}
+
+	private Object searchByAlias(JadxDecompiler decompiler) {
+		List<ClassSearchResult> results = new ArrayList<>();
+		JavaClass aliasCls = decompiler.searchJavaClassByAliasFullName(query);
+		if (aliasCls != null) {
+			ClassSearchResult r = new ClassSearchResult();
+			r.fullName = aliasCls.getFullName();
+			r.simpleName = aliasCls.getName();
+			r.packageName = aliasCls.getPackage();
+			results.add(r);
 		}
 		return JsonOutput.list(results);
 	}

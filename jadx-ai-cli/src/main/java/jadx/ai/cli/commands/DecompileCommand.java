@@ -2,6 +2,7 @@ package jadx.ai.cli.commands;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 import picocli.CommandLine.Command;
@@ -23,6 +24,9 @@ public class DecompileCommand extends AbstractCommand {
 
 	@Option(names = { "--with-smali" }, description = "Include smali/disassembly output")
 	protected boolean withSmali;
+
+	@Option(names = { "--line-map" }, description = "Include decompiled-to-source line mapping")
+	protected boolean includeLineMap;
 
 	@Override
 	protected Object execute(JadxDecompiler decompiler) throws Exception {
@@ -56,6 +60,9 @@ public class DecompileCommand extends AbstractCommand {
 		DecompileResult result = new DecompileResult();
 		result.className = cls.getFullName();
 		result.sourceCode = cls.getCode();
+		if (includeLineMap) {
+			result.sourceLineMap = cls.getCodeInfo().getCodeMetadata().getLineMapping();
+		}
 		if (withSmali) {
 			result.smali = cls.getSmali();
 		}
@@ -96,6 +103,7 @@ public class DecompileCommand extends AbstractCommand {
 		String sourceCode;
 		String smali;
 		List<MethodResult> methods;
+		Map<Integer, Integer> sourceLineMap;
 	}
 
 	static class MethodResult {

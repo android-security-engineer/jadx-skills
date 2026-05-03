@@ -43,6 +43,24 @@ public class ListCommand extends AbstractCommand {
 	}
 
 	private Object listPackages(JadxDecompiler decompiler) {
+		if (verbose) {
+			List<PackageDetailInfo> results = new ArrayList<>();
+			for (JavaPackage pkg : decompiler.getPackages()) {
+				if (packageName != null && !pkg.getFullName().startsWith(packageName)) {
+					continue;
+				}
+				PackageDetailInfo info = new PackageDetailInfo();
+				info.fullName = pkg.getFullName();
+				info.name = pkg.getName();
+				info.rawName = pkg.getRawName();
+				info.rawFullName = pkg.getRawFullName();
+				info.classCount = pkg.getClasses().size();
+				info.isLeaf = pkg.isLeaf();
+				info.subPackageCount = pkg.getSubPackages().size();
+				results.add(info);
+			}
+			return JsonOutput.list(results);
+		}
 		List<String> packages = decompiler.getPackages()
 				.stream()
 				.map(pkg -> pkg.getName())
@@ -111,6 +129,16 @@ public class ListCommand extends AbstractCommand {
 		String packageName;
 		boolean isInner;
 		String accessStr;
+	}
+
+	static class PackageDetailInfo {
+		String fullName;
+		String name;
+		String rawName;
+		String rawFullName;
+		int classCount;
+		boolean isLeaf;
+		int subPackageCount;
 	}
 
 	static class MethodInfo {

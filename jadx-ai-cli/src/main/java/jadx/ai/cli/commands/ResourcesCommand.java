@@ -47,6 +47,7 @@ public class ResourcesCommand extends AbstractCommand {
 			ResourceInfo info = new ResourceInfo();
 			info.name = res.getOriginalName();
 			info.type = res.getType().name();
+			info.deobfName = res.getDeobfName();
 			if (includeContent) {
 				try {
 					var container = res.loadContent();
@@ -65,6 +66,7 @@ public class ResourcesCommand extends AbstractCommand {
 	static class ResourceInfo {
 		String name;
 		String type;
+		String deobfName;
 		String content;
 	}
 }
