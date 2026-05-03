@@ -38,6 +38,8 @@ public class SearchCommand extends AbstractCommand {
 				return searchFields(decompiler);
 			case "string":
 				return searchStrings(decompiler);
+			case "alias":
+				return searchByAlias(decompiler);
 			default:
 				return JsonOutput.error("InvalidSearchType",
 						"Unknown search type: " + searchType + ". Use: class, method, field, string, alias");

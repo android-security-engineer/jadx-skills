@@ -28,6 +28,9 @@ public class LineMapCommand extends AbstractCommand {
 	@Option(names = { "--annotations" }, description = "Include code annotations (node refs at each position)")
 	protected boolean includeAnnotations;
 
+	@Option(names = { "--usage-map" }, description = "Include usage map (position to node)")
+	protected boolean includeUsageMap;
+
 	@Override
 	protected Object execute(JadxDecompiler decompiler) throws Exception {
 		JavaClass cls = decompiler.searchJavaClassByOrigFullName(className);
@@ -78,6 +81,20 @@ public class LineMapCommand extends AbstractCommand {
 			}
 		}
 
+		if (includeUsageMap) {
+			result.usageMap = new ArrayList<>();
+			Map<Integer, JavaNode> usageMap = cls.getUsageMap();
+			for (Map.Entry<Integer, JavaNode> entry : usageMap.entrySet()) {
+				UsageMapEntry e = new UsageMapEntry();
+				e.position = entry.getKey();
+				if (entry.getValue() != null) {
+					e.nodeFullName = entry.getValue().getFullName();
+					e.nodeType = getNodeType(entry.getValue());
+				}
+				result.usageMap.add(e);
+			}
+		}
+
 		return JsonOutput.ok(result);
 	}
 
@@ -100,10 +117,17 @@ public class LineMapCommand extends AbstractCommand {
 		return "unknown";
 	}
 
+	static class UsageMapEntry {
+		int position;
+		String nodeFullName;
+		String nodeType;
+	}
+
 	static class LineMapResult {
 		String className;
 		List<LineMapping> lineMap;
 		List<AnnotationInfo> annotations;
+		List<UsageMapEntry> usageMap;
 	}
 
 	static class LineMapping {
