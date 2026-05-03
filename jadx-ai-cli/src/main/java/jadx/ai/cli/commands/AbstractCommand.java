@@ -89,6 +89,44 @@ public abstract class AbstractCommand implements Runnable {
 
 	@Option(names = { "--include-dependencies" }, description = "Include dependencies for filtered classes")
 	protected boolean includeDependencies;
+	@Option(names = { "--insert-debug-lines" }, description = "Insert debug line numbers into code")
+	protected boolean insertDebugLines;
+
+	@Option(names = { "--allow-inline-kotlin-lambda" }, description = "Allow inline Kotlin lambda", defaultValue = "true")
+	protected boolean allowInlineKotlinLambda = true;
+
+	@Option(names = { "--restore-switch-over-string" }, description = "Restore switch over string", defaultValue = "true")
+	protected boolean restoreSwitchOverString = true;
+
+	@Option(names = { "--skip-xml-pretty-print" }, description = "Skip XML pretty printing")
+	protected boolean skipXmlPrettyPrint;
+
+	@Option(names = { "--rename-case-sensitive" }, description = "Rename case sensitive", defaultValue = "true")
+	protected boolean renameCaseSensitive = true;
+
+	@Option(names = { "--rename-valid" }, description = "Rename to valid identifiers", defaultValue = "true")
+	protected boolean renameValid = true;
+
+	@Option(names = { "--rename-printable" }, description = "Rename to printable names", defaultValue = "true")
+	protected boolean renamePrintable = true;
+
+	@Option(names = { "--use-source-name-as-alias" }, description = "Use source name as class name alias: NO, YES, IF_NECESSARY")
+	protected String useSourceNameAsAlias;
+
+	@Option(names = { "--source-name-repeat-limit" }, description = "Source name repeat limit", defaultValue = "10")
+	protected int sourceNameRepeatLimit = 10;
+
+	@Option(names = { "--resource-name-source" }, description = "Resource name source: AUTO, ORIG, DEOBF", defaultValue = "AUTO")
+	protected String resourceNameSource = "AUTO";
+
+	@Option(
+			names = { "--use-kotlin-methods-for-var-names" },
+			description = "Use Kotlin methods for var names: DISABLE, APPLY, APPLY_AND_HIDE", defaultValue = "APPLY"
+	)
+	protected String useKotlinMethodsForVarNames = "APPLY";
+
+	@Option(names = { "--use-dx-input" }, description = "Use DX input instead of java-input")
+	protected boolean useDxInput;
 
 	private static final Gson GSON = new GsonBuilder()
 			.setPrettyPrinting()
@@ -127,6 +165,23 @@ public abstract class AbstractCommand implements Runnable {
 				args.setClassFilter(s -> s.matches(classFilter));
 			}
 			args.setIncludeDependencies(includeDependencies);
+			args.setInsertDebugLines(insertDebugLines);
+			args.setAllowInlineKotlinLambda(allowInlineKotlinLambda);
+			args.setRestoreSwitchOverString(restoreSwitchOverString);
+			args.setSkipXmlPrettyPrint(skipXmlPrettyPrint);
+			args.setRenameCaseSensitive(renameCaseSensitive);
+			args.setRenameValid(renameValid);
+			args.setRenamePrintable(renamePrintable);
+			if (useSourceNameAsAlias != null) {
+				args.setUseSourceNameAsClassNameAlias(
+						jadx.api.args.UseSourceNameAsClassNameAlias.valueOf(useSourceNameAsAlias.toUpperCase()));
+			}
+			args.setSourceNameRepeatLimit(sourceNameRepeatLimit);
+			args.setResourceNameSource(
+					jadx.api.args.ResourceNameSource.valueOf(resourceNameSource.toUpperCase()));
+			args.setUseKotlinMethodsForVarNames(
+					jadx.api.JadxArgs.UseKotlinMethodsForVarNames.valueOf(useKotlinMethodsForVarNames.toUpperCase()));
+			args.setUseDxInput(useDxInput);
 
 			decompiler = new JadxDecompiler(args);
 			decompiler.load();
