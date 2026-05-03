@@ -45,6 +45,51 @@ public abstract class AbstractCommand implements Runnable {
 	@Option(names = { "--include-resources" }, description = "Include resources (not skip them)")
 	protected boolean includeResources;
 
+	@Option(names = { "--use-imports" }, description = "Use import statements", defaultValue = "true")
+	protected boolean useImports = true;
+
+	@Option(names = { "--debug-info" }, description = "Include debug info in output", defaultValue = "true")
+	protected boolean debugInfo = true;
+
+	@Option(names = { "--inline-anonymous" }, description = "Inline anonymous classes", defaultValue = "true")
+	protected boolean inlineAnonymousClasses = true;
+
+	@Option(names = { "--inline-methods" }, description = "Inline methods", defaultValue = "true")
+	protected boolean inlineMethods = true;
+
+	@Option(names = { "--move-inner" }, description = "Move inner classes", defaultValue = "true")
+	protected boolean moveInnerClasses = true;
+
+	@Option(names = { "--extract-finally" }, description = "Extract finally blocks", defaultValue = "true")
+	protected boolean extractFinally = true;
+
+	@Option(names = { "--escape-unicode" }, description = "Escape unicode characters")
+	protected boolean escapeUnicode;
+
+	@Option(names = { "--replace-consts" }, description = "Replace constants", defaultValue = "true")
+	protected boolean replaceConsts = true;
+
+	@Option(names = { "--respect-bytecode-modifiers" }, description = "Respect bytecode access modifiers")
+	protected boolean respectBytecodeAccModifiers;
+
+	@Option(names = { "--deobf-min-length" }, description = "Minimum name length for deobfuscation", defaultValue = "0")
+	protected int deobfMinLength;
+
+	@Option(names = { "--deobf-max-length" }, description = "Maximum name length for deobfuscation")
+	protected int deobfMaxLength = Integer.MAX_VALUE;
+
+	@Option(names = { "--integer-format" }, description = "Integer format: AUTO, DEC, HEX, OCT", defaultValue = "AUTO")
+	protected String integerFormat = "AUTO";
+
+	@Option(names = { "--threads-count" }, description = "Number of processing threads", defaultValue = "-1")
+	protected int threadsCount = -1;
+
+	@Option(names = { "--class-filter" }, description = "Class name filter (regex)")
+	protected String classFilter;
+
+	@Option(names = { "--include-dependencies" }, description = "Include dependencies for filtered classes")
+	protected boolean includeDependencies;
+
 	private static final Gson GSON = new GsonBuilder()
 			.setPrettyPrinting()
 			.disableHtmlEscaping()
@@ -63,6 +108,25 @@ public abstract class AbstractCommand implements Runnable {
 			args.setCommentsLevel(CommentsLevel.valueOf(commentsLevel.toUpperCase()));
 			args.setCodeCache(new NoOpCodeCache());
 			args.setUsageInfoCache(new EmptyUsageInfoCache());
+			args.setUseImports(useImports);
+			args.setDebugInfo(debugInfo);
+			args.setInlineAnonymousClasses(inlineAnonymousClasses);
+			args.setInlineMethods(inlineMethods);
+			args.setMoveInnerClasses(moveInnerClasses);
+			args.setExtractFinally(extractFinally);
+			args.setEscapeUnicode(escapeUnicode);
+			args.setReplaceConsts(replaceConsts);
+			args.setRespectBytecodeAccModifiers(respectBytecodeAccModifiers);
+			args.setDeobfuscationMinLength(deobfMinLength);
+			args.setDeobfuscationMaxLength(deobfMaxLength);
+			args.setIntegerFormat(jadx.api.args.IntegerFormat.valueOf(integerFormat.toUpperCase()));
+			if (threadsCount > 0) {
+				args.setThreadsCount(threadsCount);
+			}
+			if (classFilter != null) {
+				args.setClassFilter(s -> s.matches(classFilter));
+			}
+			args.setIncludeDependencies(includeDependencies);
 
 			decompiler = new JadxDecompiler(args);
 			decompiler.load();
