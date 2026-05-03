@@ -12,6 +12,7 @@ import jadx.api.JadxDecompiler;
 import jadx.api.JavaClass;
 import jadx.api.JavaField;
 import jadx.api.JavaMethod;
+import jadx.api.JavaPackage;
 
 @Command(name = "list", description = "List packages, classes, methods, or fields")
 public class ListCommand extends AbstractCommand {
@@ -24,6 +25,9 @@ public class ListCommand extends AbstractCommand {
 
 	@Option(names = { "-c", "--class" }, description = "List methods/fields of this class")
 	protected String className;
+
+	@Option(names = { "-v", "--verbose" }, description = "Show detailed package info")
+	protected boolean verbose;
 
 	@Override
 	protected Object execute(JadxDecompiler decompiler) throws Exception {

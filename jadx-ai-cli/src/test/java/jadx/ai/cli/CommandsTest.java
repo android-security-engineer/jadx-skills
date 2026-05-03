@@ -83,6 +83,41 @@ class CommandsTest {
 		String output = runCommand("class-detail", "-c", "Hello", testDex.getAbsolutePath());
 		assertNotNull(output);
 		assertTrue(output.contains("\"success\""), "Should contain success field: " + output);
+		assertTrue(output.contains("\"dependencies\""), "Should contain dependencies: " + output);
+		assertTrue(output.contains("\"isNoCode\""), "Should contain isNoCode: " + output);
+	}
+
+	@Test
+	void testPackageDetailCommand() {
+		String output = runCommand("package-detail", "-p", "defpackage", testDex.getAbsolutePath());
+		assertNotNull(output);
+		assertTrue(output.contains("\"success\""), "Should contain success field: " + output);
+		assertTrue(output.contains("\"isLeaf\""), "Should contain isLeaf: " + output);
+	}
+
+	@Test
+	void testLineMapCommand() {
+		String output = runCommand("line-map", "-c", "Hello", testDex.getAbsolutePath());
+		assertNotNull(output);
+		assertTrue(output.contains("\"success\""), "Should contain success field: " + output);
+		assertTrue(output.contains("\"lineMap\""), "Should contain lineMap: " + output);
+	}
+
+	@Test
+	void testUsageMethodWithOverrides() {
+		String output = runCommand("usage", "-c", "Hello", "-m", "main", testDex.getAbsolutePath());
+		assertNotNull(output);
+		assertTrue(output.contains("\"success\""), "Should contain success field: " + output);
+		assertTrue(output.contains("\"overrideRelatedMethods\""), "Should contain overrideRelatedMethods: " + output);
+		assertTrue(output.contains("\"callsSelf\""), "Should contain callsSelf: " + output);
+	}
+
+	@Test
+	void testListPackagesVerbose() {
+		String output = runCommand("list", "-t", "packages", "-v", testDex.getAbsolutePath());
+		assertNotNull(output);
+		assertTrue(output.contains("\"success\""), "Should contain success field: " + output);
+		assertTrue(output.contains("\"isLeaf\""), "Should contain isLeaf in verbose mode: " + output);
 	}
 
 	private String runCommand(String... args) {

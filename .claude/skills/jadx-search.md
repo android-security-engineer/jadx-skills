@@ -26,7 +26,7 @@ jadx-ai search -t <type> -q <query> [--exact] [--limit N] <input-file>
 | Parameter | Required | Description |
 |-----------|----------|-------------|
 | `<input-file>` | Yes | Path to APK, DEX, JAR, AAR file |
-| `-t, --type` | Yes | Search type: `class`, `method`, `field`, `string` |
+| `-t, --type` | Yes | Search type: `class`, `method`, `field`, `string`, `alias` |
 | `-q, --query` | Yes | Search query (substring match by default) |
 | `--exact` | No | Use exact match instead of substring |
 | `--limit` | No | Max results (default: 50) |

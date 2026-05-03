@@ -18,13 +18,13 @@ When the user asks to decompile, view source code, or reverse engineer an Androi
 ## Command
 
 ```bash
-java -cp jadx-ai-cli/build/libs/jadx-ai-cli.jar:jadx-core/build/libs/jadx-core-*.jar:jadx-cli/build/libs/jadx-cli-*.jar jadx.ai.cli.JadxAICLI decompile -c <class-name> [-m <method-name>] [--with-smali] <input-file>
+jadx-ai decompile -c <class-name> [-m <method-name>] [--with-smali] [--line-map] <input-file>
 ```
 
 Or using the built distribution:
 
 ```bash
-jadx-ai decompile -c <class-name> [-m <method-name>] [--with-smali] <input-file>
+jadx-ai decompile -c <class-name> [-m <method-name>] [--with-smali] [--line-map] <input-file>
 ```
 
 ## Parameters
@@ -35,6 +35,7 @@ jadx-ai decompile -c <class-name> [-m <method-name>] [--with-smali] <input-file>
 | `-c, --class` | Yes | Full class name (e.g. `com.example.MyClass`) |
 | `-m, --method` | No | Method name to decompile specifically |
 | `--with-smali` | No | Include smali/disassembly output |
+| `--line-map` | No | Include source line mapping (decompiled line → original source line) |
 
 ## Output Format
 

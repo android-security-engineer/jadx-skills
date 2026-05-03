@@ -1,15 +1,15 @@
 ---
 name: jadx-usage
-description: Query usage relationships and call graph from Android APK using JADX AI-CLI. Find who calls a method, who references a class, etc.
+description: Query usage relationships and call graph from Android APK using JADX AI-CLI. Find who calls a method, who references a class, override relationships, recursive calls.
 ---
 
 # JADX Usage Skill
 
-Query usage relationships (call graph, references) from decompiled Android code.
+Query usage relationships (call graph, references, override relationships) from decompiled Android code.
 
 ## Usage
 
-When the user asks about call graphs, references, who uses what, or code relationships:
+When the user asks about call graphs, references, who uses what, code relationships, or method overrides:
 
 1. Run the JADX AI-CLI usage command
 2. Present the structured results
@@ -29,6 +29,12 @@ jadx-ai usage -c <class> [-m <method>] [-f <field>] [-t <type>] <input-file>
 | `-m, --method` | No | Method name (requires --class) |
 | `-f, --field` | No | Field name (requires --class) |
 | `-t, --type` | No | Query type: useIn (who uses this) or used (what this uses) |
+
+## Output Fields (for method queries)
+
+- target, targetType, queryType, references
+- overrideRelatedMethods: list of methods that override/are overridden by this method
+- callsSelf: true if the method is recursive
 
 ## Examples
 

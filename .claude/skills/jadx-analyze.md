@@ -18,7 +18,9 @@ When the user asks to analyze, reverse engineer, or understand an Android app:
 5. **Step 5: Analyze resources** - Run `jadx-resources` to access AndroidManifest, layouts, etc.
 6. **Step 6: Trace relationships** - Run `jadx-usage` to find call graphs and references
 7. **Step 7: Get class details** - Run `jadx-class-detail` for inheritance and method signatures
-8. **Step 8: Export if needed** - Run `jadx-export` to save results
+8. **Step 8: Map source lines** - Run `jadx-line-map` to map decompiled lines to original source
+9. **Step 9: Explore packages** - Run `jadx-package-detail` for detailed package structure
+10. **Step 10: Export if needed** - Run `jadx-export` to save results
 
 ## Workflow Commands
 
@@ -47,7 +49,14 @@ jadx-ai usage -c <class-name> -m <method-name> <input-file>
 # Step 7: Get detailed class structure
 jadx-ai class-detail -c <class-name> <input-file>
 
-# Step 8: Export for further analysis
+# Step 8: Map decompiled lines to original source lines
+jadx-ai line-map -c <class-name> <input-file>
+jadx-ai line-map -c <class-name> --annotations <input-file>
+
+# Step 9: Get detailed package structure
+jadx-ai package-detail -p <package-name> <input-file>
+
+# Step 10: Export for further analysis
 jadx-ai export -o ./analysis-output -p <package> <input-file>
 ```
 

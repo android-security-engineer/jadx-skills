@@ -89,6 +89,19 @@ public class ClassDetailCommand extends AbstractCommand {
 			detail.fields.add(fd);
 		}
 
+		detail.dependencies = new ArrayList<>();
+		for (JavaClass dep : cls.getDependencies()) {
+			detail.dependencies.add(dep.getFullName());
+		}
+		detail.totalDepsCount = cls.getDependencies().size();
+		if (cls.getCodeParent() != null) {
+			detail.codeParent = cls.getCodeParent().getFullName();
+		}
+		if (cls.getOriginalTopParentClass() != null) {
+			detail.originalTopParentClass = cls.getOriginalTopParentClass().getFullName();
+		}
+		detail.isNoCode = cls.isNoCode();
+
 		return JsonOutput.ok(detail);
 	}
 
@@ -106,6 +119,11 @@ public class ClassDetailCommand extends AbstractCommand {
 		List<String> inlinedClasses;
 		List<MethodDetail> methods;
 		List<FieldDetail> fields;
+		List<String> dependencies;
+		int totalDepsCount;
+		String codeParent;
+		String originalTopParentClass;
+		boolean isNoCode;
 	}
 
 	static class MethodDetail {

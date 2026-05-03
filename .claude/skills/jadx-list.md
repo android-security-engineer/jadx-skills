@@ -18,7 +18,7 @@ When the user asks to explore, browse, or list the structure of an Android app:
 ## Command
 
 ```bash
-jadx-ai list -t <type> [-p <package>] [-c <class>] <input-file>
+jadx-ai list -t <type> [-p <package>] [-c <class>] [-v] <input-file>
 ```
 
 ## Parameters
@@ -29,12 +29,16 @@ jadx-ai list -t <type> [-p <package>] [-c <class>] <input-file>
 | `-t, --type` | No | List type: `packages`, `classes`, `methods`, `fields` (default: classes) |
 | `-p, --package` | No | Filter by package name |
 | `-c, --class` | No | Class name (required for methods/fields) |
+| `-v, --verbose` | No | Show detailed package info (fullName, rawName, classCount, isLeaf, subPackageCount) |
 
 ## Examples
 
 ```bash
 # List all packages
 jadx-ai list -t packages app.apk
+
+# List packages with detailed info
+jadx-ai list -t packages -v app.apk
 
 # List classes in a specific package
 jadx-ai list -t classes -p com.example.app app.apk

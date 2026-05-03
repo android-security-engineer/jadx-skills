@@ -30,6 +30,10 @@ jadx-ai resources [--include-resources] [-t <type>] [-n <name>] [--content] <inp
 | `-n, --name` | No | Filter by name (substring match) |
 | `--content` | No | Include text content of resources |
 
+## Output Fields
+
+- name, type, deobfName (deobfuscated name if available)
+
 ## Examples
 
 ```bash

@@ -94,6 +94,11 @@ public class UsageCommand extends AbstractCommand {
 		result.targetType = "method";
 		result.queryType = queryType;
 		result.references = refs;
+		result.overrideRelatedMethods = new ArrayList<>();
+		for (JavaMethod override : mth.getOverrideRelatedMethods()) {
+			result.overrideRelatedMethods.add(override.getFullName());
+		}
+		result.callsSelf = mth.callsSelf();
 		return JsonOutput.ok(result);
 	}
 
