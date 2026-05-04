@@ -46,6 +46,9 @@ public class LineMapCommand extends AbstractCommand {
 	@Option(names = { "--enclosing-node" }, description = "Get enclosing node (class/method) at position (character offset)")
 	protected int enclosingNodePos = -1;
 
+	@Option(names = { "--annotation-at" }, description = "Get code annotation at position (character offset)")
+	protected int annotationAtPos = -1;
+
 	@Override
 	protected Object execute(JadxDecompiler decompiler) throws Exception {
 		JavaClass cls = decompiler.searchJavaClassByOrigFullName(className);
@@ -125,6 +128,21 @@ public class LineMapCommand extends AbstractCommand {
 			result.enclosingNode = buildNodeRef(node);
 		}
 
+		if (annotationAtPos >= 0) {
+			ICodeAnnotation ann = cls.getAnnotationAt(annotationAtPos);
+			if (ann != null) {
+				AnnotationAtResult annResult = new AnnotationAtResult();
+				annResult.position = annotationAtPos;
+				annResult.type = ann.getAnnType().name();
+				JavaNode node = decompiler.getJavaNodeByCodeAnnotation(codeInfo, ann);
+				if (node != null) {
+					annResult.nodeFullName = node.getFullName();
+					annResult.nodeType = getNodeType(node);
+				}
+				result.annotationAt = annResult;
+			}
+		}
+
 		return JsonOutput.ok(result);
 	}
 
@@ -177,6 +195,7 @@ public class LineMapCommand extends AbstractCommand {
 		NodeRef nodeAtPosition;
 		NodeRef closestNode;
 		NodeRef enclosingNode;
+		AnnotationAtResult annotationAt;
 	}
 
 	static class LineMapping {
@@ -196,5 +215,12 @@ public class LineMapCommand extends AbstractCommand {
 		String nodeType;
 		int defPos;
 		String declaringClass;
+	}
+
+	static class AnnotationAtResult {
+		int position;
+		String type;
+		String nodeFullName;
+		String nodeType;
 	}
 }
