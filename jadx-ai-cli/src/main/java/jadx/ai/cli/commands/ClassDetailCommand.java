@@ -77,6 +77,7 @@ public class ClassDetailCommand extends AbstractCommand {
 			md.isClassInit = m.isClassInit();
 			md.accessFlags = m.getAccessFlags().rawValue();
 			md.accessStr = m.getAccessFlags().toString();
+			md.defPos = m.getDefPos();
 			detail.methods.add(md);
 		}
 
@@ -84,9 +85,11 @@ public class ClassDetailCommand extends AbstractCommand {
 		for (JavaField f : cls.getFields()) {
 			FieldDetail fd = new FieldDetail();
 			fd.name = f.getName();
+			fd.rawName = f.getRawName();
 			fd.type = f.getType().toString();
 			fd.accessFlags = f.getAccessFlags().rawValue();
 			fd.accessStr = f.getAccessFlags().toString();
+			fd.defPos = f.getDefPos();
 			detail.fields.add(fd);
 		}
 
