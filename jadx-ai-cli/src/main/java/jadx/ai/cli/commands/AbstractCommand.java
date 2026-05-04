@@ -128,6 +128,33 @@ public abstract class AbstractCommand implements Runnable {
 	@Option(names = { "--use-dx-input" }, description = "Use DX input instead of java-input")
 	protected boolean useDxInput;
 
+	@Option(names = { "--user-renames-mappings-path" }, description = "Path to user renames mappings file")
+	protected String userRenamesMappingsPath;
+
+	@Option(
+			names = { "--user-renames-mappings-mode" },
+			description = "User renames mappings mode: IGNORE, READ, READ_AND_APPLY, READ_APPLY_AND_SAVE", defaultValue = "IGNORE"
+	)
+	protected String userRenamesMappingsMode = "IGNORE";
+
+	@Option(names = { "--deobf-whitelist" }, description = "Deobfuscation whitelist (comma-separated class/package names ending with .*)")
+	protected String deobfWhitelist;
+
+	@Option(names = { "--export-gradle-type" }, description = "Export as Gradle project: AUTO, ANDROID, JAVA")
+	protected String exportGradleType;
+
+	@Option(names = { "--generated-renames-mapping-file" }, description = "Output file for generated renames mapping")
+	protected String generatedRenamesMappingFile;
+
+	@Option(names = { "--disabled-passes" }, description = "Disabled passes (comma-separated pass names)")
+	protected String disabledPasses;
+
+	@Option(names = { "--plugin-options" }, description = "Plugin options (key=value pairs, comma-separated)")
+	protected String pluginOptionsStr;
+
+	@Option(names = { "--disabled-plugins" }, description = "Disabled plugins (comma-separated plugin IDs)")
+	protected String disabledPluginsStr;
+
 	private static final Gson GSON = new GsonBuilder()
 			.setPrettyPrinting()
 			.disableHtmlEscaping()
