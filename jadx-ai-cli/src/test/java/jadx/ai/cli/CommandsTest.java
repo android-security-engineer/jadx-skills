@@ -206,4 +206,53 @@ class CommandsTest {
 		assertNotNull(output);
 		assertTrue(output.contains("\"success\""), "Should contain success field: " + output);
 	}
+
+	@Test
+	void testClassDetailDefPosAndRawName() {
+		String output = runCommand("class-detail", "-c", "Hello", testDex.getAbsolutePath());
+		assertNotNull(output);
+		assertTrue(output.contains("\"success\""), "Should contain success field: " + output);
+		assertTrue(output.contains("\"defPos\""), "Should contain defPos: " + output);
+		assertTrue(output.contains("\"rawName\""), "Should contain rawName: " + output);
+	}
+
+	@Test
+	void testLineMapNodeAtPosition() {
+		String output = runCommand("line-map", "-c", "Hello", "--node-at", "0", testDex.getAbsolutePath());
+		assertNotNull(output);
+		assertTrue(output.contains("\"success\""), "Should contain success field: " + output);
+		assertTrue(output.contains("\"nodeAtPosition\""), "Should contain nodeAtPosition: " + output);
+	}
+
+	@Test
+	void testLineMapClosestNode() {
+		String output = runCommand("line-map", "-c", "Hello", "--closest-node", "0", testDex.getAbsolutePath());
+		assertNotNull(output);
+		assertTrue(output.contains("\"success\""), "Should contain success field: " + output);
+		assertTrue(output.contains("\"closestNode\""), "Should contain closestNode: " + output);
+	}
+
+	@Test
+	void testLineMapEnclosingNode() {
+		String output = runCommand("line-map", "-c", "Hello", "--enclosing-node", "0", testDex.getAbsolutePath());
+		assertNotNull(output);
+		assertTrue(output.contains("\"success\""), "Should contain success field: " + output);
+		assertTrue(output.contains("\"enclosingNode\""), "Should contain enclosingNode: " + output);
+	}
+
+	@Test
+	void testLineMapAnnotationAt() {
+		String output = runCommand("line-map", "-c", "Hello", "--annotation-at", "0", testDex.getAbsolutePath());
+		assertNotNull(output);
+		assertTrue(output.contains("\"success\""), "Should contain success field: " + output);
+		assertTrue(output.contains("\"annotationAt\""), "Should contain annotationAt: " + output);
+	}
+
+	@Test
+	void testUsageClassUsed() {
+		String output = runCommand("usage", "-c", "Hello", "-t", "used", testDex.getAbsolutePath());
+		assertNotNull(output);
+		assertTrue(output.contains("\"success\""), "Should contain success field: " + output);
+		assertTrue(output.contains("\"used\""), "Should contain used queryType: " + output);
+	}
 }

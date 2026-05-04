@@ -113,34 +113,57 @@ public class LineMapCommand extends AbstractCommand {
 			}
 		}
 
+		if (usePlacesNode != null) {
+			JavaNode targetNode = resolveNode(cls, usePlacesNode);
+			if (targetNode != null) {
+				result.usePlaces = cls.getUsePlacesFor(codeInfo, targetNode);
+			} else {
+				result.usePlaces = new ArrayList<>();
+			}
+		}
+
+		if (sourceLine >= 0) {
+			Integer srcLine = cls.getSourceLine(sourceLine);
+			result.sourceLineResult = srcLine;
+		}
+
 		if (nodeAtPos >= 0) {
 			JavaNode node = decompiler.getJavaNodeAtPosition(codeInfo, nodeAtPos);
 			result.nodeAtPosition = buildNodeRef(node);
+			if (result.nodeAtPosition == null) {
+				result.nodeAtPosition = new NodeRef();
+			}
 		}
 
 		if (closestNodePos >= 0) {
 			JavaNode node = decompiler.getClosestJavaNode(codeInfo, closestNodePos);
 			result.closestNode = buildNodeRef(node);
+			if (result.closestNode == null) {
+				result.closestNode = new NodeRef();
+			}
 		}
 
 		if (enclosingNodePos >= 0) {
 			JavaNode node = decompiler.getEnclosingNode(codeInfo, enclosingNodePos);
 			result.enclosingNode = buildNodeRef(node);
+			if (result.enclosingNode == null) {
+				result.enclosingNode = new NodeRef();
+			}
 		}
 
 		if (annotationAtPos >= 0) {
 			ICodeAnnotation ann = cls.getAnnotationAt(annotationAtPos);
+			AnnotationAtResult annResult = new AnnotationAtResult();
+			annResult.position = annotationAtPos;
 			if (ann != null) {
-				AnnotationAtResult annResult = new AnnotationAtResult();
-				annResult.position = annotationAtPos;
 				annResult.type = ann.getAnnType().name();
 				JavaNode node = decompiler.getJavaNodeByCodeAnnotation(codeInfo, ann);
 				if (node != null) {
 					annResult.nodeFullName = node.getFullName();
 					annResult.nodeType = getNodeType(node);
 				}
-				result.annotationAt = annResult;
 			}
+			result.annotationAt = annResult;
 		}
 
 		return JsonOutput.ok(result);
@@ -158,6 +181,25 @@ public class LineMapCommand extends AbstractCommand {
 			ref.declaringClass = node.getDeclaringClass().getFullName();
 		}
 		return ref;
+	}
+
+	private JavaNode resolveNode(JavaClass cls, String nodeRef) {
+		int dotIdx = nodeRef.lastIndexOf('.');
+		if (dotIdx > 0) {
+			String methodName = nodeRef.substring(dotIdx + 1);
+			for (JavaMethod m : cls.getMethods()) {
+				if (m.getName().equals(methodName)) {
+					return m;
+				}
+			}
+			String fieldName = nodeRef.substring(dotIdx + 1);
+			for (JavaField f : cls.getFields()) {
+				if (f.getName().equals(fieldName)) {
+					return f;
+				}
+			}
+		}
+		return cls;
 	}
 
 	private String getNodeType(JavaNode node) {
