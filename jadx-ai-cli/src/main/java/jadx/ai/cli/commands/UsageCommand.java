@@ -57,17 +57,33 @@ public class UsageCommand extends AbstractCommand {
 
 	private Object queryClassUsage(JavaClass cls) {
 		cls.getCode();
-		List<UsageRef> refs = new ArrayList<>();
-		for (JavaNode node : cls.getUseIn()) {
-			UsageRef ref = new UsageRef();
-			ref.name = node.getFullName();
-			ref.nodeType = getNodeType(node);
-			refs.add(ref);
-		}
 		UsageResult result = new UsageResult();
 		result.target = cls.getFullName();
 		result.targetType = "class";
-		result.references = refs;
+
+		if ("used".equals(queryType)) {
+			result.queryType = "used";
+			List<UsageRef> refs = new ArrayList<>();
+			for (JavaMethod m : cls.getMethods()) {
+				for (JavaNode node : m.getUsed()) {
+					UsageRef ref = new UsageRef();
+					ref.name = node.getFullName();
+					ref.nodeType = getNodeType(node);
+					refs.add(ref);
+				}
+			}
+			result.references = refs;
+		} else {
+			result.queryType = "useIn";
+			List<UsageRef> refs = new ArrayList<>();
+			for (JavaNode node : cls.getUseIn()) {
+				UsageRef ref = new UsageRef();
+				ref.name = node.getFullName();
+				ref.nodeType = getNodeType(node);
+				refs.add(ref);
+			}
+			result.references = refs;
+		}
 		return JsonOutput.ok(result);
 	}
 
