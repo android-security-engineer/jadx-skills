@@ -36,7 +36,8 @@ jadx-ai info <input-file>
     "totalResources": 45,
     "errorsCount": 0,
     "warnsCount": 3,
-    "version": "1.5.1"
+    "version": "1.5.1",
+    "errorsReport": "..."
   }
 }
 ```

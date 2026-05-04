@@ -30,6 +30,7 @@ jadx-ai search -t <type> -q <query> [--exact] [--limit N] <input-file>
 | `-q, --query` | Yes | Search query (substring match by default) |
 | `--exact` | No | Use exact match instead of substring |
 | `--limit` | No | Max results (default: 50) |
+| `--search-parent` | No | Search class or its parent if class has DONT_GENERATE flag |
 
 ## Search Types
 

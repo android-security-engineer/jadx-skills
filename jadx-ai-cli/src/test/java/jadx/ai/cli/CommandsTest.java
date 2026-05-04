@@ -175,4 +175,35 @@ class CommandsTest {
 		assertNotNull(output);
 		assertTrue(output.contains("\"success\""), "Should contain success field: " + output);
 	}
+
+	@Test
+	void testLineMapWithUsePlaces() {
+		String output = runCommand("line-map", "-c", "Hello", "--use-places", "Hello.main", testDex.getAbsolutePath());
+		assertNotNull(output);
+		assertTrue(output.contains("\"success\""), "Should contain success field: " + output);
+		assertTrue(output.contains("\"usePlaces\""), "Should contain usePlaces: " + output);
+	}
+
+	@Test
+	void testLineMapWithSourceLine() {
+		String output = runCommand("line-map", "-c", "Hello", "--source-line", "1", testDex.getAbsolutePath());
+		assertNotNull(output);
+		assertTrue(output.contains("\"success\""), "Should contain success field: " + output);
+		assertTrue(output.contains("\"sourceLineResult\""), "Should contain sourceLineResult: " + output);
+	}
+
+	@Test
+	void testInfoWithErrorsReport() {
+		String output = runCommand("info", testDex.getAbsolutePath());
+		assertNotNull(output);
+		assertTrue(output.contains("\"success\""), "Should contain success field: " + output);
+		assertTrue(output.contains("\"errorsReport\""), "Should contain errorsReport: " + output);
+	}
+
+	@Test
+	void testSearchWithParent() {
+		String output = runCommand("search", "-t", "class", "-q", "Hello", "--search-parent", testDex.getAbsolutePath());
+		assertNotNull(output);
+		assertTrue(output.contains("\"success\""), "Should contain success field: " + output);
+	}
 }

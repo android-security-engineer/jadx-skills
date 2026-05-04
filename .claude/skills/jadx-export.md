@@ -30,6 +30,7 @@ jadx-ai export -o <output-dir> [-p <package>] [-c <class>] [--export-format java
 | `-p, --package` | No | Export only classes in this package |
 | `-c, --class` | No | Export only this specific class |
 | `--export-format` | No | Export format: `java` (default) or `smali` |
+| `--save-all` | No | Use JADX save() to export all sources and resources |
 
 ## Examples
 
