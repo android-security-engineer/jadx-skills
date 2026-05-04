@@ -37,6 +37,15 @@ public class LineMapCommand extends AbstractCommand {
 	@Option(names = { "--source-line" }, description = "Get source line for a specific decompiled line number")
 	protected int sourceLine = -1;
 
+	@Option(names = { "--node-at" }, description = "Get JavaNode at exact position (character offset)")
+	protected int nodeAtPos = -1;
+
+	@Option(names = { "--closest-node" }, description = "Get closest JavaNode above position (character offset)")
+	protected int closestNodePos = -1;
+
+	@Option(names = { "--enclosing-node" }, description = "Get enclosing node (class/method) at position (character offset)")
+	protected int enclosingNodePos = -1;
+
 	@Override
 	protected Object execute(JadxDecompiler decompiler) throws Exception {
 		JavaClass cls = decompiler.searchJavaClassByOrigFullName(className);
@@ -101,7 +110,36 @@ public class LineMapCommand extends AbstractCommand {
 			}
 		}
 
+		if (nodeAtPos >= 0) {
+			JavaNode node = decompiler.getJavaNodeAtPosition(codeInfo, nodeAtPos);
+			result.nodeAtPosition = buildNodeRef(node);
+		}
+
+		if (closestNodePos >= 0) {
+			JavaNode node = decompiler.getClosestJavaNode(codeInfo, closestNodePos);
+			result.closestNode = buildNodeRef(node);
+		}
+
+		if (enclosingNodePos >= 0) {
+			JavaNode node = decompiler.getEnclosingNode(codeInfo, enclosingNodePos);
+			result.enclosingNode = buildNodeRef(node);
+		}
+
 		return JsonOutput.ok(result);
+	}
+
+	private NodeRef buildNodeRef(JavaNode node) {
+		if (node == null) {
+			return null;
+		}
+		NodeRef ref = new NodeRef();
+		ref.fullName = node.getFullName();
+		ref.nodeType = getNodeType(node);
+		ref.defPos = node.getDefPos();
+		if (node.getDeclaringClass() != null) {
+			ref.declaringClass = node.getDeclaringClass().getFullName();
+		}
+		return ref;
 	}
 
 	private String getNodeType(JavaNode node) {
@@ -136,6 +174,9 @@ public class LineMapCommand extends AbstractCommand {
 		List<UsageMapEntry> usageMap;
 		List<Integer> usePlaces;
 		Integer sourceLineResult;
+		NodeRef nodeAtPosition;
+		NodeRef closestNode;
+		NodeRef enclosingNode;
 	}
 
 	static class LineMapping {
@@ -148,5 +189,12 @@ public class LineMapCommand extends AbstractCommand {
 		String type;
 		String nodeFullName;
 		String nodeType;
+	}
+
+	static class NodeRef {
+		String fullName;
+		String nodeType;
+		int defPos;
+		String declaringClass;
 	}
 }
