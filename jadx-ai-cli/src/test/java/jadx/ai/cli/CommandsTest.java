@@ -186,7 +186,7 @@ class CommandsTest {
 
 	@Test
 	void testLineMapWithSourceLine() {
-		String output = runCommand("line-map", "-c", "Hello", "--source-line", "1", testDex.getAbsolutePath());
+		String output = runCommand("line-map", "-c", "Hello", "--source-line", "3", testDex.getAbsolutePath());
 		assertNotNull(output);
 		assertTrue(output.contains("\"success\""), "Should contain success field: " + output);
 		assertTrue(output.contains("\"sourceLineResult\""), "Should contain sourceLineResult: " + output);

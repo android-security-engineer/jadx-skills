@@ -79,7 +79,8 @@ public class ListCommand extends AbstractCommand {
 
 	private Object listClasses(JadxDecompiler decompiler) {
 		List<ClassInfo> results = new ArrayList<>();
-		for (JavaClass cls : decompiler.getClasses()) {
+		List<JavaClass> classes = withInners ? decompiler.getClassesWithInners() : decompiler.getClasses();
+		for (JavaClass cls : classes) {
 			if (packageName != null && !cls.getPackage().startsWith(packageName)) {
 				continue;
 			}
