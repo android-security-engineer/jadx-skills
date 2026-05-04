@@ -30,6 +30,17 @@ public class InfoCommand extends AbstractCommand {
 		info.totalMethods = methodCount;
 		info.totalFields = fieldCount;
 
+		java.io.ByteArrayOutputStream errBaos = new java.io.ByteArrayOutputStream();
+		java.io.PrintStream errPs = new java.io.PrintStream(errBaos);
+		java.io.PrintStream oldErr = System.err;
+		try {
+			System.setErr(errPs);
+			decompiler.printErrorsReport();
+		} finally {
+			System.setErr(oldErr);
+		}
+		info.errorsReport = errBaos.toString();
+
 		return JsonOutput.ok(info);
 	}
 
@@ -45,5 +56,6 @@ public class InfoCommand extends AbstractCommand {
 		int errorsCount;
 		int warnsCount;
 		String version;
+		String errorsReport;
 	}
 }

@@ -27,6 +27,9 @@ public class SearchCommand extends AbstractCommand {
 	@Option(names = { "--exact" }, description = "Exact match instead of substring")
 	protected boolean exact;
 
+	@Option(names = { "--search-parent" }, description = "Search class or its parent if class has DONT_GENERATE flag")
+	protected boolean searchParent;
+
 	@Override
 	protected Object execute(JadxDecompiler decompiler) throws Exception {
 		switch (searchType.toLowerCase()) {
@@ -58,6 +61,17 @@ public class SearchCommand extends AbstractCommand {
 
 	private Object searchClasses(JadxDecompiler decompiler) {
 		List<ClassSearchResult> results = new ArrayList<>();
+		if (searchParent) {
+			JavaClass cls = decompiler.searchJavaClassOrItsParentByOrigFullName(query);
+			if (cls != null) {
+				ClassSearchResult r = new ClassSearchResult();
+				r.fullName = cls.getFullName();
+				r.simpleName = cls.getName();
+				r.packageName = cls.getPackage();
+				results.add(r);
+			}
+			return JsonOutput.list(results);
+		}
 		for (JavaClass cls : decompiler.getClasses()) {
 			if (matches(cls.getFullName()) || matches(cls.getName())) {
 				ClassSearchResult r = new ClassSearchResult();

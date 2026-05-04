@@ -31,6 +31,12 @@ public class LineMapCommand extends AbstractCommand {
 	@Option(names = { "--usage-map" }, description = "Include usage map (position to node)")
 	protected boolean includeUsageMap;
 
+	@Option(names = { "--use-places" }, description = "Show use places for a specific node (format: class.method or class.field)")
+	protected String usePlacesNode;
+
+	@Option(names = { "--source-line" }, description = "Get source line for a specific decompiled line number")
+	protected int sourceLine = -1;
+
 	@Override
 	protected Object execute(JadxDecompiler decompiler) throws Exception {
 		JavaClass cls = decompiler.searchJavaClassByOrigFullName(className);
@@ -128,6 +134,8 @@ public class LineMapCommand extends AbstractCommand {
 		List<LineMapping> lineMap;
 		List<AnnotationInfo> annotations;
 		List<UsageMapEntry> usageMap;
+		List<Integer> usePlaces;
+		Integer sourceLineResult;
 	}
 
 	static class LineMapping {

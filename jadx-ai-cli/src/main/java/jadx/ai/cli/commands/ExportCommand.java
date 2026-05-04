@@ -29,11 +29,26 @@ public class ExportCommand extends AbstractCommand {
 	@Option(names = { "--export-format" }, description = "Export format: java (default) or smali", defaultValue = "java")
 	protected String exportFormat;
 
+	@Option(names = { "--save-all" }, description = "Use JADX save() to export all sources and resources to output dir")
+	protected boolean saveAll;
+
 	@Override
 	protected Object execute(JadxDecompiler decompiler) throws Exception {
 		if (!outputDir.exists() && !outputDir.mkdirs()) {
 			return JsonOutput.error("OutputError",
 					"Cannot create output directory: " + outputDir);
+		}
+
+		if (saveAll) {
+			decompiler.getArgs().setOutDir(outputDir);
+			decompiler.getArgs().setOutDirSrc(new File(outputDir, "sources"));
+			decompiler.getArgs().setOutDirRes(new File(outputDir, "resources"));
+			decompiler.save();
+			ExportSummary summary = new ExportSummary();
+			summary.exportedCount = decompiler.getClasses().size();
+			summary.errorCount = 0;
+			summary.outputDir = outputDir.getAbsolutePath();
+			return JsonOutput.ok(summary);
 		}
 
 		List<ExportResult> exported = new ArrayList<>();
