@@ -19,6 +19,9 @@ public class ClassDetailCommand extends AbstractCommand {
 	@Option(names = { "-c", "--class" }, description = "Full class name", required = true)
 	protected String className;
 
+	@Option(names = { "--method-short-id" }, description = "Search method by short ID (e.g. 'onCreate(Landroid/os/Bundle;)V')")
+	protected String methodShortId;
+
 	@Override
 	protected Object execute(JadxDecompiler decompiler) throws Exception {
 		JavaClass cls = decompiler.searchJavaClassByOrigFullName(className);
@@ -128,6 +131,8 @@ public class ClassDetailCommand extends AbstractCommand {
 		String codeParent;
 		String originalTopParentClass;
 		boolean isNoCode;
+		String javaPackage;
+		String foundMethod;
 	}
 
 	static class MethodDetail {

@@ -32,6 +32,12 @@ public class ExportCommand extends AbstractCommand {
 	@Option(names = { "--save-all" }, description = "Use JADX save() to export all sources and resources to output dir")
 	protected boolean saveAll;
 
+	@Option(names = { "--save-sources" }, description = "Use JADX saveSources() to export only sources to output dir")
+	protected boolean saveSources;
+
+	@Option(names = { "--save-resources" }, description = "Use JADX saveResources() to export only resources to output dir")
+	protected boolean saveResources;
+
 	@Override
 	protected Object execute(JadxDecompiler decompiler) throws Exception {
 		if (!outputDir.exists() && !outputDir.mkdirs()) {

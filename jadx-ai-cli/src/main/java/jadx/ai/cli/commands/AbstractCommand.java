@@ -155,6 +155,12 @@ public abstract class AbstractCommand implements Runnable {
 	@Option(names = { "--disabled-plugins" }, description = "Disabled plugins (comma-separated plugin IDs)")
 	protected String disabledPluginsStr;
 
+	@Option(
+			names = { "--security-flags" },
+			description = "Security flags: VERIFY_APP_PACKAGE, SECURE_XML_PARSER, SECURE_ZIP_READER (comma-separated, default: all)"
+	)
+	protected String securityFlagsStr;
+
 	private static final Gson GSON = new GsonBuilder()
 			.setPrettyPrinting()
 			.disableHtmlEscaping()
@@ -209,6 +215,13 @@ public abstract class AbstractCommand implements Runnable {
 			args.setUseKotlinMethodsForVarNames(
 					jadx.api.JadxArgs.UseKotlinMethodsForVarNames.valueOf(useKotlinMethodsForVarNames.toUpperCase()));
 			args.setUseDxInput(useDxInput);
+			if (securityFlagsStr != null && !securityFlagsStr.isEmpty()) {
+				java.util.Set<jadx.api.security.JadxSecurityFlag> flags = new java.util.HashSet<>();
+				for (String flag : securityFlagsStr.split(",")) {
+					flags.add(jadx.api.security.JadxSecurityFlag.valueOf(flag.trim().toUpperCase()));
+				}
+				args.setSecurity(new jadx.api.security.impl.JadxSecurity(flags));
+			}
 			if (userRenamesMappingsPath != null) {
 				args.setUserRenamesMappingsPath(java.nio.file.Paths.get(userRenamesMappingsPath));
 			}
