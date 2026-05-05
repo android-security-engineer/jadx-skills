@@ -140,7 +140,7 @@ public abstract class AbstractCommand implements Runnable {
 	@Option(names = { "--deobf-whitelist" }, description = "Deobfuscation whitelist (comma-separated class/package names ending with .*)")
 	protected String deobfWhitelist;
 
-	@Option(names = { "--export-gradle-type" }, description = "Export as Gradle project: AUTO, ANDROID, JAVA")
+	@Option(names = { "--export-gradle-type" }, description = "Export as Gradle project: AUTO, ANDROID_APP, ANDROID_LIBRARY, SIMPLE_JAVA")
 	protected String exportGradleType;
 
 	@Option(names = { "--generated-renames-mapping-file" }, description = "Output file for generated renames mapping")
@@ -209,6 +209,37 @@ public abstract class AbstractCommand implements Runnable {
 			args.setUseKotlinMethodsForVarNames(
 					jadx.api.JadxArgs.UseKotlinMethodsForVarNames.valueOf(useKotlinMethodsForVarNames.toUpperCase()));
 			args.setUseDxInput(useDxInput);
+			if (userRenamesMappingsPath != null) {
+				args.setUserRenamesMappingsPath(java.nio.file.Paths.get(userRenamesMappingsPath));
+			}
+			args.setUserRenamesMappingsMode(
+					jadx.api.args.UserRenamesMappingsMode.valueOf(userRenamesMappingsMode.toUpperCase()));
+			if (deobfWhitelist != null) {
+				args.setDeobfuscationWhitelist(java.util.Arrays.asList(deobfWhitelist.split(",")));
+			}
+			if (exportGradleType != null) {
+				args.setExportGradleType(
+						jadx.core.export.ExportGradleType.valueOf(exportGradleType.toUpperCase()));
+			}
+			if (generatedRenamesMappingFile != null) {
+				args.setGeneratedRenamesMappingFile(new java.io.File(generatedRenamesMappingFile));
+			}
+			if (disabledPasses != null) {
+				args.getDisabledPasses().addAll(java.util.Arrays.asList(disabledPasses.split(",")));
+			}
+			if (pluginOptionsStr != null) {
+				java.util.Map<String, String> pluginOpts = new java.util.LinkedHashMap<>();
+				for (String pair : pluginOptionsStr.split(",")) {
+					String[] kv = pair.split("=", 2);
+					if (kv.length == 2) {
+						pluginOpts.put(kv[0].trim(), kv[1].trim());
+					}
+				}
+				args.setPluginOptions(pluginOpts);
+			}
+			if (disabledPluginsStr != null) {
+				args.setDisabledPlugins(new java.util.HashSet<>(java.util.Arrays.asList(disabledPluginsStr.split(","))));
+			}
 
 			decompiler = new JadxDecompiler(args);
 			decompiler.load();
