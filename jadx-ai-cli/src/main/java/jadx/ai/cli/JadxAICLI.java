@@ -10,6 +10,8 @@ import jadx.ai.cli.commands.InfoCommand;
 import jadx.ai.cli.commands.LineMapCommand;
 import jadx.ai.cli.commands.ListCommand;
 import jadx.ai.cli.commands.PackageDetailCommand;
+import jadx.ai.cli.commands.ReloadCommand;
+import jadx.ai.cli.commands.RenameCommand;
 import jadx.ai.cli.commands.ResourcesCommand;
 import jadx.ai.cli.commands.ScriptCommand;
 import jadx.ai.cli.commands.SearchCommand;
@@ -29,7 +31,9 @@ import jadx.ai.cli.commands.UsageCommand;
 				ResourcesCommand.class,
 				ScriptCommand.class,
 				PackageDetailCommand.class,
-				LineMapCommand.class
+				LineMapCommand.class,
+				RenameCommand.class,
+				ReloadCommand.class
 		},
 		mixinStandardHelpOptions = true,
 		version = "1.0.0"
