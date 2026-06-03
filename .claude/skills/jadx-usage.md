@@ -1,6 +1,6 @@
 ---
 name: jadx-usage
-description: Query code reference relationships (call graph, cross-references) in Android APK/DEX files using JADX AI-CLI. Supports useIn (who references this) and used (what this references) queries for classes, methods, and fields.
+description: Query code reference relationships (call graph, cross-references) in Android APK/DEX files using JADX AI-CLI. Supports useIn (who references this) and used (what this references) queries for classes, methods, and fields. Supports recursive depth exploration.
 ---
 
 # JADX Usage Skill
@@ -18,7 +18,7 @@ When the user asks about code references, call graphs, who uses a class/method/f
 ## Command
 
 ```bash
-jadx-ai usage -c <class-name> [-m <method>] [-f <field>] [-t useIn|used] <input-file>
+jadx-ai usage -c <class-name> [-m <method>] [-f <field>] [-t useIn|used] [-d <depth>] <input-file>
 ```
 
 ## Parameters
@@ -30,6 +30,7 @@ jadx-ai usage -c <class-name> [-m <method>] [-f <field>] [-t useIn|used] <input-
 | `-m, --method` | No | Method name (requires --class) |
 | `-f, --field` | No | Field name (requires --class) |
 | `-t, --type` | No | Query type: `useIn` (who uses this, default) or `used` (what this uses) |
+| `-d, --depth` | No | Recursion depth for usage exploration (1=flat, 2+=recursive, default: 1) |
 
 ## Query Types
 
@@ -43,7 +44,8 @@ jadx-ai usage -c <class-name> [-m <method>] [-f <field>] [-t useIn|used] <input-
 - target: full name of the queried node
 - targetType: "class", "method", or "field"
 - queryType: "useIn" or "used"
-- references: list of {name, nodeType} referencing/referenced nodes
+- references: list of {name, nodeType} referencing/referenced nodes (depth=1)
+- usageTree: list of {name, nodeType, children} for recursive results (depth>1)
 - overrideRelatedMethods: (method only) list of override-related method full names
 - callsSelf: (method only) whether the method calls itself
 - unresolvedUsed: (method only) list of unresolved method references
@@ -65,4 +67,10 @@ jadx-ai usage -c com.example.MyClass -m myMethod -t used app.apk
 
 # Who references this field?
 jadx-ai usage -c com.example.MyClass -f myField app.apk
+
+# Recursive usage exploration (3 levels deep)
+jadx-ai usage -c "com.example.NetworkClient" -m "sendRequest" --depth 3 app.apk
+
+# Find what a method calls, recursively
+jadx-ai usage -c "com.example.MainActivity" -m "onCreate" -t used --depth 2 app.apk
 ```

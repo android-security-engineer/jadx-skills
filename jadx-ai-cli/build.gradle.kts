@@ -1,17 +1,24 @@
 plugins {
 	id("jadx-library")
 	application
+	id("com.gradleup.shadow") version "8.3.8"
 }
 
 application {
 	mainClass.set("jadx.ai.cli.JadxAICLI")
+	applicationName = "jadx-ai"
+	applicationDefaultJvmArgs =
+		listOf(
+			"-Xms256M",
+			"-XX:MaxRAMPercentage=70.0",
+		)
 }
 
 dependencies {
 	implementation(project(":jadx-core"))
-	implementation(project(":jadx-cli"))
 
 	implementation("info.picocli:picocli:4.7.5")
+		implementation("com.android.tools.build:apksig:8.13.1")
 	implementation("com.google.code.gson:gson:2.10.1")
 	implementation("org.slf4j:slf4j-api:2.0.9")
 	runtimeOnly("ch.qos.logback:logback-classic:1.4.11")
@@ -24,6 +31,13 @@ tasks.test {
 }
 
 tasks.jar {
+	manifest {
+		attributes("Main-Class" to "jadx.ai.cli.JadxAICLI")
+	}
+}
+
+tasks.shadowJar {
+	mergeServiceFiles()
 	manifest {
 		attributes("Main-Class" to "jadx.ai.cli.JadxAICLI")
 	}

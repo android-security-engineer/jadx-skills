@@ -1,7 +1,9 @@
 package jadx.ai.cli.commands;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 import picocli.CommandLine.Command;
@@ -28,6 +30,9 @@ public class UsageCommand extends AbstractCommand {
 
 	@Option(names = { "-t", "--type" }, description = "Query type: useIn (who uses this) or used (what this uses)", defaultValue = "useIn")
 	protected String queryType;
+
+	@Option(names = { "-d", "--depth" }, description = "Recursion depth for usage exploration (1=flat, 2+=recursive, default: 1)", defaultValue = "1")
+	protected int depth;
 
 	@Override
 	protected Object execute(JadxDecompiler decompiler) throws Exception {
@@ -97,13 +102,30 @@ public class UsageCommand extends AbstractCommand {
 			return JsonOutput.error("MethodNotFound", "Method not found: " + mthName);
 		}
 		JavaMethod mth = methods.get(0);
+
+		if (depth > 1) {
+			UsageTreeResult result = new UsageTreeResult();
+			result.target = mth.getFullName();
+			result.targetType = "method";
+			result.queryType = queryType;
+			result.depth = depth;
+			UsageTreeRef rootRef = new UsageTreeRef();
+			rootRef.name = mth.getFullName();
+			rootRef.nodeType = "method";
+			collectUsageRecursive(mth, 1, rootRef);
+			result.usageTree = rootRef.children;
+			result.overrideRelatedMethods = new ArrayList<>();
+			for (JavaMethod override : mth.getOverrideRelatedMethods()) {
+				result.overrideRelatedMethods.add(override.getFullName());
+			}
+			result.callsSelf = mth.callsSelf();
+			return JsonOutput.ok(result);
+		}
+
 		List<UsageRef> refs = new ArrayList<>();
 		List<JavaNode> nodes = "used".equals(queryType) ? mth.getUsed() : mth.getUseIn();
 		for (JavaNode node : nodes) {
-			UsageRef ref = new UsageRef();
-			ref.name = node.getFullName();
-			ref.nodeType = getNodeType(node);
-			refs.add(ref);
+			refs.add(buildUsageRef(node));
 		}
 		UsageResult result = new UsageResult();
 		result.target = mth.getFullName();
@@ -161,6 +183,31 @@ public class UsageCommand extends AbstractCommand {
 		return "unknown";
 	}
 
+	private UsageRef buildUsageRef(JavaNode node) {
+		UsageRef ref = new UsageRef();
+		ref.name = node.getFullName();
+		ref.nodeType = getNodeType(node);
+		return ref;
+	}
+
+	private void collectUsageRecursive(JavaNode node, int currentDepth, UsageTreeRef parent) {
+		List<JavaNode> nodes;
+		if (node instanceof JavaMethod) {
+			nodes = "used".equals(queryType) ? ((JavaMethod) node).getUsed() : node.getUseIn();
+		} else {
+			nodes = "used".equals(queryType) ? new ArrayList<>() : node.getUseIn();
+		}
+		for (JavaNode child : nodes) {
+			UsageTreeRef childRef = new UsageTreeRef();
+			childRef.name = child.getFullName();
+			childRef.nodeType = getNodeType(child);
+			if (currentDepth < depth) {
+				collectUsageRecursive(child, currentDepth + 1, childRef);
+			}
+			parent.children.add(childRef);
+		}
+	}
+
 	static class UsageResult {
 		String target;
 		String targetType;
@@ -175,4 +222,37 @@ public class UsageCommand extends AbstractCommand {
 		String name;
 		String nodeType;
 	}
+
+	static class UsageTreeResult {
+		String target;
+		String targetType;
+		String queryType;
+		int depth;
+		List<UsageTreeRef> usageTree;
+		List<String> overrideRelatedMethods;
+		boolean callsSelf;
+	}
+
+	static class UsageTreeRef {
+		String name;
+		String nodeType;
+		List<UsageTreeRef> children = new ArrayList<>();
+	}
+	@Override
+	protected Map<String, Object> buildDaemonArgs() {
+		Map<String, Object> args = new HashMap<>();
+		if (className != null) {
+			args.put("class", className);
+		}
+		if (methodName != null) {
+			args.put("method", methodName);
+		}
+		if (fieldName != null) {
+			args.put("field", fieldName);
+		}
+		args.put("type", queryType);
+		args.put("depth", depth);
+		return args;
+	}
+
 }

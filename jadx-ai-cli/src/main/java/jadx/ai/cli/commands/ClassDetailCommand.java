@@ -73,7 +73,7 @@ public class ClassDetailCommand extends AbstractCommand {
 			md.name = m.getName();
 			md.returnType = m.getReturnType().toString();
 			md.arguments = new ArrayList<>();
-			for (jadx.core.dex.instructions.args.ArgType arg : m.getArguments()) {
+			for (var arg : m.getArguments()) {
 				md.arguments.add(arg.toString());
 			}
 			md.isConstructor = m.isConstructor();

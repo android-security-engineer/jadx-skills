@@ -2,6 +2,8 @@ package jadx.ai.cli.commands;
 
 import java.io.File;
 import java.io.PrintStream;
+import java.util.HashMap;
+import java.util.Map;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -9,15 +11,18 @@ import com.google.gson.GsonBuilder;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.Parameters;
 
+import jadx.ai.cli.daemon.DaemonClient;
+import jadx.ai.cli.daemon.DaemonProtocol;
 import jadx.ai.cli.output.JsonOutput;
 import jadx.api.CommentsLevel;
 import jadx.api.DecompilationMode;
 import jadx.api.JadxArgs;
 import jadx.api.JadxDecompiler;
-import jadx.api.impl.NoOpCodeCache;
-import jadx.api.usage.impl.EmptyUsageInfoCache;
+import jadx.core.export.ExportGradleType;
 
 public abstract class AbstractCommand implements Runnable {
+
+	protected JadxArgs jadxArgs;
 
 	@Parameters(index = "0", description = "Input file (APK, DEX, JAR, AAR, or class)")
 	protected File inputFile;
@@ -168,77 +173,93 @@ public abstract class AbstractCommand implements Runnable {
 
 	@Override
 	public void run() {
+		// Phase 1: Try daemon mode
+		if (inputFile != null && !isDaemonCommand()) {
+			DaemonClient daemonClient = new DaemonClient();
+			int daemonPort = daemonClient.detectPort();
+			if (daemonPort > 0) {
+				try {
+					DaemonProtocol.Response resp = daemonClient.sendCommand(
+							getDaemonCommandName(), buildDaemonArgs(), daemonPort);
+					if (resp.success) {
+						System.out.println(GSON.toJson(resp.data));
+						return;
+					}
+				} catch (Exception ignored) {
+				}
+			}
+		}
+
+		// Phase 2: Local mode (original behavior)
 		JadxDecompiler decompiler = null;
 		try {
-			JadxArgs args = new JadxArgs();
-			args.setInputFile(inputFile);
-			args.setSkipResources(!includeResources);
-			args.setShowInconsistentCode(showBadCode);
-			args.setDeobfuscationOn(deobfuscation);
-			args.setDecompilationMode(DecompilationMode.valueOf(decompilationMode.toUpperCase()));
-			args.setCommentsLevel(CommentsLevel.valueOf(commentsLevel.toUpperCase()));
-			args.setCodeCache(new NoOpCodeCache());
-			args.setUsageInfoCache(new EmptyUsageInfoCache());
-			args.setUseImports(useImports);
-			args.setDebugInfo(debugInfo);
-			args.setInlineAnonymousClasses(inlineAnonymousClasses);
-			args.setInlineMethods(inlineMethods);
-			args.setMoveInnerClasses(moveInnerClasses);
-			args.setExtractFinally(extractFinally);
-			args.setEscapeUnicode(escapeUnicode);
-			args.setReplaceConsts(replaceConsts);
-			args.setRespectBytecodeAccModifiers(respectBytecodeAccModifiers);
-			args.setDeobfuscationMinLength(deobfMinLength);
-			args.setDeobfuscationMaxLength(deobfMaxLength);
-			args.setIntegerFormat(jadx.api.args.IntegerFormat.valueOf(integerFormat.toUpperCase()));
+			this.jadxArgs = new JadxArgs();
+			jadxArgs.setInputFile(inputFile);
+			jadxArgs.setSkipResources(!includeResources);
+			jadxArgs.setShowInconsistentCode(showBadCode);
+			jadxArgs.setDeobfuscationOn(deobfuscation);
+			jadxArgs.setDecompilationMode(DecompilationMode.valueOf(decompilationMode.toUpperCase()));
+			jadxArgs.setCommentsLevel(CommentsLevel.valueOf(commentsLevel.toUpperCase()));
+						jadxArgs.setUseImports(useImports);
+			jadxArgs.setDebugInfo(debugInfo);
+			jadxArgs.setInlineAnonymousClasses(inlineAnonymousClasses);
+			jadxArgs.setInlineMethods(inlineMethods);
+			jadxArgs.setMoveInnerClasses(moveInnerClasses);
+			jadxArgs.setExtractFinally(extractFinally);
+			jadxArgs.setEscapeUnicode(escapeUnicode);
+			jadxArgs.setReplaceConsts(replaceConsts);
+			jadxArgs.setRespectBytecodeAccModifiers(respectBytecodeAccModifiers);
+			jadxArgs.setDeobfuscationMinLength(deobfMinLength);
+			jadxArgs.setDeobfuscationMaxLength(deobfMaxLength);
+			jadxArgs.setIntegerFormat(jadx.api.args.IntegerFormat.valueOf(integerFormat.toUpperCase()));
 			if (threadsCount > 0) {
-				args.setThreadsCount(threadsCount);
+				jadxArgs.setThreadsCount(threadsCount);
 			}
 			if (classFilter != null) {
-				args.setClassFilter(s -> s.matches(classFilter));
+				jadxArgs.setClassFilter(s -> s.matches(classFilter));
 			}
-			args.setIncludeDependencies(includeDependencies);
-			args.setInsertDebugLines(insertDebugLines);
-			args.setAllowInlineKotlinLambda(allowInlineKotlinLambda);
-			args.setRestoreSwitchOverString(restoreSwitchOverString);
-			args.setSkipXmlPrettyPrint(skipXmlPrettyPrint);
-			args.setRenameCaseSensitive(renameCaseSensitive);
-			args.setRenameValid(renameValid);
-			args.setRenamePrintable(renamePrintable);
+			jadxArgs.setIncludeDependencies(includeDependencies);
+			jadxArgs.setInsertDebugLines(insertDebugLines);
+			jadxArgs.setAllowInlineKotlinLambda(allowInlineKotlinLambda);
+			jadxArgs.setRestoreSwitchOverString(restoreSwitchOverString);
+			jadxArgs.setSkipXmlPrettyPrint(skipXmlPrettyPrint);
+			jadxArgs.setRenameCaseSensitive(renameCaseSensitive);
+			jadxArgs.setRenameValid(renameValid);
+			jadxArgs.setRenamePrintable(renamePrintable);
 			if (useSourceNameAsAlias != null) {
-				args.setUseSourceNameAsClassNameAlias(
+				jadxArgs.setUseSourceNameAsClassNameAlias(
 						jadx.api.args.UseSourceNameAsClassNameAlias.valueOf(useSourceNameAsAlias.toUpperCase()));
 			}
-			args.setSourceNameRepeatLimit(sourceNameRepeatLimit);
-			args.setResourceNameSource(
+			jadxArgs.setSourceNameRepeatLimit(sourceNameRepeatLimit);
+			jadxArgs.setResourceNameSource(
 					jadx.api.args.ResourceNameSource.valueOf(resourceNameSource.toUpperCase()));
-			args.setUseKotlinMethodsForVarNames(
+			jadxArgs.setUseKotlinMethodsForVarNames(
 					jadx.api.JadxArgs.UseKotlinMethodsForVarNames.valueOf(useKotlinMethodsForVarNames.toUpperCase()));
-			args.setUseDxInput(useDxInput);
+			jadxArgs.setUseDxInput(useDxInput);
 			if (securityFlagsStr != null && !securityFlagsStr.isEmpty()) {
 				java.util.Set<jadx.api.security.JadxSecurityFlag> flags = new java.util.HashSet<>();
 				for (String flag : securityFlagsStr.split(",")) {
 					flags.add(jadx.api.security.JadxSecurityFlag.valueOf(flag.trim().toUpperCase()));
 				}
-				args.setSecurity(new jadx.api.security.impl.JadxSecurity(flags));
+				jadxArgs.setSecurity(new jadx.api.security.impl.JadxSecurity(flags));
 			}
 			if (userRenamesMappingsPath != null) {
-				args.setUserRenamesMappingsPath(java.nio.file.Paths.get(userRenamesMappingsPath));
+				jadxArgs.setUserRenamesMappingsPath(java.nio.file.Paths.get(userRenamesMappingsPath));
 			}
-			args.setUserRenamesMappingsMode(
+			jadxArgs.setUserRenamesMappingsMode(
 					jadx.api.args.UserRenamesMappingsMode.valueOf(userRenamesMappingsMode.toUpperCase()));
 			if (deobfWhitelist != null) {
-				args.setDeobfuscationWhitelist(java.util.Arrays.asList(deobfWhitelist.split(",")));
+				jadxArgs.setDeobfuscationWhitelist(java.util.Arrays.asList(deobfWhitelist.split(",")));
 			}
 			if (exportGradleType != null) {
-				args.setExportGradleType(
-						jadx.core.export.ExportGradleType.valueOf(exportGradleType.toUpperCase()));
+				jadxArgs.setExportGradleType(
+						ExportGradleType.valueOf(exportGradleType.toUpperCase()));
 			}
 			if (generatedRenamesMappingFile != null) {
-				args.setGeneratedRenamesMappingFile(new java.io.File(generatedRenamesMappingFile));
+				jadxArgs.setGeneratedRenamesMappingFile(new java.io.File(generatedRenamesMappingFile));
 			}
 			if (disabledPasses != null) {
-				args.getDisabledPasses().addAll(java.util.Arrays.asList(disabledPasses.split(",")));
+				jadxArgs.getDisabledPasses().addAll(java.util.Arrays.asList(disabledPasses.split(",")));
 			}
 			if (pluginOptionsStr != null) {
 				java.util.Map<String, String> pluginOpts = new java.util.LinkedHashMap<>();
@@ -248,13 +269,13 @@ public abstract class AbstractCommand implements Runnable {
 						pluginOpts.put(kv[0].trim(), kv[1].trim());
 					}
 				}
-				args.setPluginOptions(pluginOpts);
+				jadxArgs.setPluginOptions(pluginOpts);
 			}
 			if (disabledPluginsStr != null) {
-				args.setDisabledPlugins(new java.util.HashSet<>(java.util.Arrays.asList(disabledPluginsStr.split(","))));
+				jadxArgs.setDisabledPlugins(new java.util.HashSet<>(java.util.Arrays.asList(disabledPluginsStr.split(","))));
 			}
 
-			decompiler = new JadxDecompiler(args);
+			decompiler = new JadxDecompiler(jadxArgs);
 			decompiler.load();
 
 			Object result = execute(decompiler);
@@ -278,4 +299,19 @@ public abstract class AbstractCommand implements Runnable {
 			out.println(data);
 		}
 	}
+
+		protected boolean isDaemonCommand() {
+			return this instanceof DaemonCommand;
+		}
+
+		protected String getDaemonCommandName() {
+			String name = getClass().getSimpleName();
+			name = name.replace("Command", "");
+			return Character.toLowerCase(name.charAt(0)) + name.substring(1);
+		}
+
+		protected Map<String, Object> buildDaemonArgs() {
+			return new HashMap<>();
+		}
+
 }

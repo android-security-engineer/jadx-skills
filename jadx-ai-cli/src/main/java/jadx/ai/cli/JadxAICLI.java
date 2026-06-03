@@ -3,6 +3,14 @@ package jadx.ai.cli;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 
+import jadx.ai.cli.commands.DaemonCommand;
+import jadx.ai.cli.commands.GraphCommand;
+import jadx.ai.cli.commands.HookCommand;
+import jadx.ai.cli.commands.CommentCommand;
+import jadx.ai.cli.commands.McpCommand;
+import jadx.ai.cli.commands.NavigateCommand;
+import jadx.ai.cli.commands.SignatureCommand;
+import jadx.ai.cli.commands.CfgCommand;
 import jadx.ai.cli.commands.ClassDetailCommand;
 import jadx.ai.cli.commands.DecompileCommand;
 import jadx.ai.cli.commands.ExportCommand;
@@ -33,7 +41,15 @@ import jadx.ai.cli.commands.UsageCommand;
 				PackageDetailCommand.class,
 				LineMapCommand.class,
 				RenameCommand.class,
-				ReloadCommand.class
+				ReloadCommand.class,
+					DaemonCommand.class,
+				GraphCommand.class,
+				HookCommand.class,
+				NavigateCommand.class,
+				CommentCommand.class,
+					CfgCommand.class,
+					SignatureCommand.class,
+					McpCommand.class
 		},
 		mixinStandardHelpOptions = true,
 		version = "1.0.0"
