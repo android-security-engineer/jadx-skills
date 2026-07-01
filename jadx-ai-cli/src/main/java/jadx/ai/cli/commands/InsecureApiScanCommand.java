@@ -52,11 +52,18 @@ public class InsecureApiScanCommand extends AbstractCommand {
 	@Option(names = { "--limit" }, description = "Maximum number of findings", defaultValue = "200")
 	protected int limit = 200;
 
-	/** Gate: only scan classes that touch potentially insecure APIs. */
-	private static final Pattern API_MARKER = Pattern.compile(
-			"setComponentEnabledSetting|Settings\\.Secure|Settings\\.Global|DevicePolicyManager|"
-					+ "UsageStatsManager|dismissKeyguard|KeyguardManager|PackageInstaller|"
-					+ "ACTION_INSTALL_PACKAGE|Build\\.SERIAL|Build\\.getSerial|ANDROID_ID|getDeviceId|"
+	/**
+	 * Gate: only scan classes that touch potentially insecure APIs. Kept in sync with the RULES set —
+	 * every rule's anchors must appear here or a class exercising only that rule is skipped at the gate
+	 * and the finding is silently dropped. (This regressed for {@code getImei} — present in
+	 * {@link #DEVICE_ID_REGEX} but absent here, so a pure {@code tm.getImei()} class was skipped — and
+	 * for {@code queryUsageStats} / {@code DeviceAdminReceiver}.) Package-private so a test can assert
+	 * the gate covers every rule anchor.
+	 */
+	static final Pattern API_MARKER = Pattern.compile(
+			"setComponentEnabledSetting|Settings\\.Secure|Settings\\.Global|DevicePolicyManager|DeviceAdminReceiver|"
+					+ "UsageStatsManager|queryUsageStats|dismissKeyguard|KeyguardManager|PackageInstaller|"
+					+ "ACTION_INSTALL_PACKAGE|Build\\.SERIAL|Build\\.getSerial|ANDROID_ID|getDeviceId|getImei|"
 					+ "getSubscriberId|getSimSerialNumber|getMeid|getIccSerialNumber|MediaDrm|"
 					+ "getWidevineDeviceId|getPropertyMediaDrm");
 
