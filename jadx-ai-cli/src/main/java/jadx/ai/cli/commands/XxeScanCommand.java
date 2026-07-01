@@ -29,8 +29,9 @@ import jadx.api.JavaClass;
  *
  * <p>Heuristic: hardening is scoped to the class containing the factory (the common idiom — configure
  * the factory right where it's built). A factory with no hardening marker in its class is flagged
- * {@code xxe_unhardened_parser/high}; an explicit {@code setExpandEntityReferences(true)} is
- * {@code xxe_entity_expansion_enabled/high} regardless. A hardened class reports {@code xxe_hardened/info}.
+ * {@code xxe_unhardened_parser/high}; an explicit {@code setExpandEntityReferences(true)} or
+ * {@code setXIncludeAware(true)} is {@code xxe_entity_expansion_enabled/high} regardless. A hardened
+ * class reports {@code xxe_hardened/info}.
  *
  * Returns {@code {findings:[{kind,severity,className,lineNumber,detail}], count, highSeverityCount,
  * hardenedClasses, truncated}}.
@@ -66,9 +67,18 @@ public class XxeScanCommand extends AbstractCommand {
 					+ "ACCESS_EXTERNAL_DTD|ACCESS_EXTERNAL_SCHEMA|"
 					+ "setXIncludeAware\\s*\\(\\s*false|XMLConstants\\.FEATURE_SECURE_PROCESSING");
 
-	/** Explicit re-enable of entity expansion — dangerous regardless of other hardening. */
-	private static final Pattern ENTITY_EXPANSION_ON = Pattern.compile(
-			"setExpandEntityReferences\\s*\\(\\s*true");
+	/**
+	 * Explicit re-enable of a dangerous XML feature — high regardless of other hardening.
+	 * <ul>
+	 *   <li>{@code setExpandEntityReferences(true)} — re-enables external entity expansion (XXE).</li>
+	 *   <li>{@code setXIncludeAware(true)} — enables XInclude processing; an attacker can pull in
+	 *       arbitrary external files via {@code <xi:include href="...">}. The {@code false} form is in
+	 *       {@link #HARDENED}; the {@code true} form was previously NOT flagged — a symmetric gap.</li>
+	 * </ul>
+	 * Package-private so a test can assert both dangerous forms fire.
+	 */
+	static final Pattern EXPLICIT_DANGER = Pattern.compile(
+			"setExpandEntityReferences\\s*\\(\\s*true|setXIncludeAware\\s*\\(\\s*true");
 
 	@Override
 	protected void applyArgs(Map<String, Object> args) {
@@ -109,9 +119,11 @@ public class XxeScanCommand extends AbstractCommand {
 			for (int i = 0; i < lines.length && findings.size() < limit; i++) {
 				String line = lines[i];
 
-				if (ENTITY_EXPANSION_ON.matcher(line).find()) {
+				if (isXxeExplicitDanger(line)) {
 					findings.add(finding("xxe_entity_expansion_enabled", "high", fullName, i + 1,
-							"setExpandEntityReferences(true) explicitly enables external entity expansion — XXE-exploitable"));
+							"Explicitly enabled a dangerous XML feature (setExpandEntityReferences(true) / "
+									+ "setXIncludeAware(true)) — re-enables entity expansion or XInclude, XXE-exploitable "
+									+ "regardless of other hardening"));
 					highSeverityCount++;
 					continue;
 				}
@@ -140,6 +152,14 @@ public class XxeScanCommand extends AbstractCommand {
 		data.put("hardenedClasses", hardenedClasses);
 		data.put("truncated", findings.size() >= limit);
 		return JsonOutput.ok(data);
+	}
+
+	/**
+	 * True if the line explicitly re-enables a dangerous XML feature (entity expansion or XInclude).
+	 * Package-private so a test can assert both dangerous forms fire.
+	 */
+	static boolean isXxeExplicitDanger(String line) {
+		return line != null && EXPLICIT_DANGER.matcher(line).find();
 	}
 
 	private static Map<String, Object> finding(String kind, String severity, String cls, int line, String detail) {
