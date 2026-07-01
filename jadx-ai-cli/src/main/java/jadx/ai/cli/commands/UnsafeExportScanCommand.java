@@ -70,7 +70,11 @@ public class UnsafeExportScanCommand extends AbstractCommand {
 			Pattern.quote("android:readPermission") + "\\s*=\\s*\"([^\"]+)\"");
 	private static final Pattern ATTR_WRITE_PERMISSION = Pattern.compile(
 			Pattern.quote("android:writePermission") + "\\s*=\\s*\"([^\"]+)\"");
-	private static final Pattern INTENT_FILTER = Pattern.compile("<intent-filter>");
+	// Match the opening <intent-filter ...> tag WITH OR WITHOUT attributes. A plain "<intent-filter>"
+	// contains() check silently misses the very common attributed forms — <intent-filter
+	// android:autoVerify="true"> (every App Links / deep-link handler) and <intent-filter
+	// android:priority="..."> — which would make an implicitly-exported component read as un-exported.
+	private static final Pattern INTENT_FILTER = Pattern.compile("<intent-filter[\\s>]");
 
 	@Override
 	protected void applyArgs(Map<String, Object> args) {
@@ -127,7 +131,7 @@ public class UnsafeExportScanCommand extends AbstractCommand {
 
 				// Determine exported status
 				String exportedStr = attr(attrs, ATTR_EXPORTED);
-				boolean hasIntentFilter = body.contains("<intent-filter>");
+				boolean hasIntentFilter = hasIntentFilter(body);
 				boolean exported;
 				boolean explicitExported = exportedStr != null;
 
@@ -183,6 +187,15 @@ public class UnsafeExportScanCommand extends AbstractCommand {
 	private static String attr(String text, Pattern p) {
 		Matcher m = p.matcher(text);
 		return m.find() ? m.group(1) : null;
+	}
+
+	/**
+	 * True if the component body declares an {@code <intent-filter>}, with or without attributes.
+	 * Package-private so a test can assert the attributed forms ({@code android:autoVerify},
+	 * {@code android:priority}) that a bare {@code "<intent-filter>"} check silently drops.
+	 */
+	static boolean hasIntentFilter(String body) {
+		return INTENT_FILTER.matcher(body).find();
 	}
 
 	private static Map<String, Object> finding(String category, String component, String componentType,

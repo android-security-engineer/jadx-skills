@@ -72,8 +72,11 @@ public class DeeplinkScanCommand extends AbstractCommand {
 	private static final Pattern ATTR_EXPORTED = Pattern.compile(
 			Pattern.quote("android:exported") + "\\s*=\\s*\"(true|false)\"");
 	/** <intent-filter>...</intent-filter> block. */
+	// The opening tag must allow attributes: <intent-filter android:autoVerify="true"> is THE App
+	// Links form, and a bare "<intent-filter>" pattern would skip exactly the verified deep links a
+	// deep-link scanner most cares about. Group(1) captures the inner body.
 	private static final Pattern INTENT_FILTER = Pattern.compile(
-			"<intent-filter>(.*?)</intent-filter>", Pattern.DOTALL);
+			"<intent-filter\\b[^>]*>(.*?)</intent-filter>", Pattern.DOTALL);
 	/** <data ... /> element within intent-filter. */
 	private static final Pattern DATA_ELEMENT = Pattern.compile(
 			"<data\\b([^>]*?)/?>", Pattern.DOTALL);
@@ -225,7 +228,7 @@ public class DeeplinkScanCommand extends AbstractCommand {
 		}
 		// Determine exported: explicit attribute, or implicit (intent-filter present = exported by default pre-API-31)
 		String exportedStr = attr(attrs, ATTR_EXPORTED);
-		boolean hasIntentFilter = body.contains("<intent-filter>");
+		boolean hasIntentFilter = hasIntentFilter(body);
 		boolean exported;
 		if (exportedStr != null) {
 			exported = "true".equals(exportedStr);
@@ -269,6 +272,15 @@ public class DeeplinkScanCommand extends AbstractCommand {
 	private static String attr(String text, Pattern p) {
 		Matcher m = p.matcher(text);
 		return m.find() ? m.group(1) : null;
+	}
+
+	/**
+	 * True if the component body declares an {@code <intent-filter>}, with or without attributes.
+	 * Package-private so a test can assert that {@code android:autoVerify="true"} App Links filters —
+	 * the ones a deep-link scanner most cares about — are not dropped by a bare-tag check.
+	 */
+	static boolean hasIntentFilter(String body) {
+		return INTENT_FILTER.matcher(body).find();
 	}
 
 	private static String buildUri(String scheme, String host, String path) {
