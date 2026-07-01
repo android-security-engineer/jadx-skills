@@ -60,17 +60,25 @@ public class RuntimeIntegrityScanCommand extends AbstractCommand {
 
 	/** Gate: only scan classes with integrity-check markers. */
 	private static final Pattern INTEGRITY_MARKER = Pattern.compile(
-			"getSignatures|GET_SIGNATURES|PackageInfo|CRC32|Adler32|checksum|"
+			"getSignatures|GET_SIGNATURES|PackageInfo|signingInfo|getSigningInfo|CRC32|Adler32|checksum|"
 					+ "isDebuggerConnected|android\\.os\\.Debug|PTRACE_TRACEME|ptrace|"
 					+ "goldfish|ranchu|generic|qemu_pipe|LIBFRIDA|frida|"
 					+ "XposedBridge|XposedHelpers|de\\.robv\\.android\\.xposed|"
 					+ "emulator|isEmulator|detectEmulator|Bluestacks|Nox|MEMU");
 
-	private static final Pattern SIGNATURE_VERIFY = Pattern.compile(
+	/**
+	 * Signature-verification signals. Covers the pre-API-28 {@code packageInfo.signatures} /
+	 * {@code GET_SIGNATURES} form AND the API 28+ replacement {@code signingInfo} /
+	 * {@code getSigningInfo()} — modern code reads {@code packageInfo.signingInfo} (a SigningInfo
+	 * object), which {@code packageInfo\.signatures} does not match. Package-private so a test can
+	 * assert the modern form is not missed.
+	 */
+	static final Pattern SIGNATURE_VERIFY = Pattern.compile(
 			"getSignatures\\s*\\(|GET_SIGNATURES|packageInfo\\.signatures|"
 					+ "PackageManager\\.GET_SIGNING_CERTIFICATES|"
 					+ "getPackageInfo.*GET_SIGNATURES|verifySignature|"
-					+ "Signature\\s*\\[\\s*\\]|toByteArray\\s*\\(\\)\\s*.*MessageDigest");
+					+ "Signature\\s*\\[\\s*\\]|toByteArray\\s*\\(\\)\\s*.*MessageDigest|"
+					+ "signingInfo|getSigningInfo\\s*\\(");
 	private static final Pattern DEX_CRC = Pattern.compile(
 			"CRC32|Adler32|checksum|DexFile.*crc|getCrc|"
 					+ "ZipEntry.*getCrc|verifyDexChecksum|checkDexIntegrity");
