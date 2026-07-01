@@ -21,9 +21,11 @@ import jadx.api.JavaClass;
  *
  * <p>Detects sensitive data written to logs: passwords, tokens, PII,
  * cryptographic material, and auth headers in Log/Log.d/Log.e/Log.i/Log.w/Log.v
- * and System.out/err. Distinct from {@code logging-scan} (logging framework
- * inventory and debug-log presence) — this scanner focuses on <b>what sensitive
- * data is being logged</b>, not whether logging is present.
+ * and System.out/err, AND in third-party logging frameworks ({@code Timber.},
+ * {@code Logger.}) that {@code logging-scan} already inventories. Distinct from
+ * {@code logging-scan} (logging framework inventory and debug-log presence) — this
+ * scanner focuses on <b>what sensitive data is being logged</b>, not whether
+ * logging is present.
  *
  * <p>Categories (first-match-wins per line, ONE/class per kind):
  * <ul>
@@ -54,37 +56,43 @@ public class LogInfoLeakScanCommand extends AbstractCommand {
 	@Option(names = { "--limit" }, description = "Maximum number of findings", defaultValue = "200")
 	protected int limit = 200;
 
+	/**
+	 * A logging-sink prefix shared by the gate, the call check, and every classification rule so that
+	 * third-party frameworks ({@code Timber.<level>(}, {@code Logger.<level>(}) — which
+	 * {@code logging-scan} already inventories — are classified here too, not just {@code Log.*} /
+	 * {@code System.out/err}. Without this, {@code Timber.d("token="+token)} got only the coarse
+	 * {@code sensitive_log} from {@code logging-scan} and missed the finer {@code log_token} here.
+	 * Package-private so a test can assert framework logs are classified.
+	 */
+	static final String LOG_SINK_PREFIX =
+			"(?:Log\\.[a-z]+|Timber\\.[a-z]+|Logger\\.[a-z]+)\\s*\\(|System\\.(?:out|err)\\.print(?:ln)?\\s*\\(|println\\s*\\(";
+
 	/** Gate: only scan classes with log statements. */
 	private static final Pattern LOG_MARKER = Pattern.compile(
 			"Log\\.(d|e|i|v|w|wtf)\\(|System\\.out\\.print|System\\.err\\.print|"
-					+ "android\\.util\\.Log|println|Log\\.d|Log\\.e|Log\\.i|Log\\.v|Log\\.w");
+					+ "android\\.util\\.Log|println|Timber\\.[a-z]+|Logger\\.[a-z]+");
 
-	/** Log statement pattern. */
-	private static final Pattern LOG_CALL = Pattern.compile(
-			"Log\\.(d|e|i|v|w|wtf)\\s*\\(|System\\.(out|err)\\.print|println\\s*\\(");
+	/** Log statement pattern. Package-private for testing. */
+	static final Pattern LOG_CALL = Pattern.compile(LOG_SINK_PREFIX);
 
 	private static final Pattern LOG_PASSWORD = Pattern.compile(
-			"Log\\..*(?:password|passwd|pwd|secret|credential|pass_phrase)|"
-					+ "System\\.(?:out|err)\\..*(?:password|passwd|pwd|secret|credential)|"
-					+ "(?:password|passwd|pwd|secret|credential).*(?:Log\\.|println|System\\.out)");
-	private static final Pattern LOG_TOKEN = Pattern.compile(
-			"Log\\..*(?:token|session|auth_token|access_token|refresh_token|jwt|bearer)|"
-					+ "System\\.(?:out|err)\\..*(?:token|session|auth_token|access_token)|"
-					+ "(?:token|session|auth_token|access_token).*(?:Log\\.|println|System\\.out)");
+			"(?:" + LOG_SINK_PREFIX + ").*(?:password|passwd|pwd|secret|credential|pass_phrase)|"
+					+ "(?:password|passwd|pwd|secret|credential).*(?:" + LOG_SINK_PREFIX + ")");
+	/** Package-private for the framework-sink test. */
+	static final Pattern LOG_TOKEN = Pattern.compile(
+			"(?:" + LOG_SINK_PREFIX + ").*(?:token|session|auth_token|access_token|refresh_token|jwt|bearer)|"
+					+ "(?:token|session|auth_token|access_token).*(?:" + LOG_SINK_PREFIX + ")");
 	private static final Pattern LOG_PII = Pattern.compile(
-			"Log\\..*(?:email|phone|ssn|social_security|credit_card|card_number|"
-					+ "date_of_birth|address|account_number)|"
-					+ "System\\.(?:out|err)\\..*(?:email|phone|ssn|credit_card)");
-	private static final Pattern LOG_CRYPTO = Pattern.compile(
-			"Log\\..*(?:key|cipher|signature|certificate|keystore|secret_key|private_key)|"
-					+ "System\\.(?:out|err)\\..*(?:secret_key|private_key|cipher)");
+			"(?:" + LOG_SINK_PREFIX + ").*(?:email|phone|ssn|social_security|credit_card|card_number|"
+					+ "date_of_birth|address|account_number)");
+	/** Package-private for the framework-sink test. */
+	static final Pattern LOG_CRYPTO = Pattern.compile(
+			"(?:" + LOG_SINK_PREFIX + ").*(?:key|cipher|signature|certificate|keystore|secret_key|private_key)");
 	private static final Pattern LOG_AUTH_HEADER = Pattern.compile(
-			"Log\\..*(?:Authorization|Cookie|WWW-Authenticate|Set-Cookie|Bearer)|"
-					+ "System\\.(?:out|err)\\..*(?:Authorization|Cookie|Bearer)|"
-					+ "(?:Authorization|Cookie|Bearer).*(?:Log\\.|println)");
+			"(?:" + LOG_SINK_PREFIX + ").*(?:Authorization|Cookie|WWW-Authenticate|Set-Cookie|Bearer)|"
+					+ "(?:Authorization|Cookie|Bearer).*(?:" + LOG_SINK_PREFIX + ")");
 	private static final Pattern LOG_INTENT_EXTRAS = Pattern.compile(
-			"Log\\..*getIntent\\(\\)|Log\\..*getExtras\\(\\)|Log\\..*Bundle\\.toString|"
-					+ "Log\\..*intent\\.getParcelable|Log\\..*getIntent.*getStringExtra");
+			"(?:" + LOG_SINK_PREFIX + ").*(?:getIntent\\(\\)|getExtras\\(\\)|Bundle\\.toString|intent\\.getParcelable|getStringExtra)");
 
 	private static final class Rule {
 		final Pattern pattern;
