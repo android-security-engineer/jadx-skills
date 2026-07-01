@@ -56,8 +56,18 @@ public class InsecureApiScanCommand extends AbstractCommand {
 	private static final Pattern API_MARKER = Pattern.compile(
 			"setComponentEnabledSetting|Settings\\.Secure|Settings\\.Global|DevicePolicyManager|"
 					+ "UsageStatsManager|dismissKeyguard|KeyguardManager|PackageInstaller|"
-					+ "ACTION_INSTALL_PACKAGE|Build\\.SERIAL|ANDROID_ID|getDeviceId|"
+					+ "ACTION_INSTALL_PACKAGE|Build\\.SERIAL|Build\\.getSerial|ANDROID_ID|getDeviceId|"
 					+ "getSubscriberId|getSimSerialNumber");
+
+	/**
+	 * Persistent device-identifier APIs — {@code Build.SERIAL} (the deprecated field) AND its API 26+
+	 * replacement {@code Build.getSerial()} (modern code calls the method; the field was deprecated in
+	 * API 26). Both are abused for device fingerprinting (CWE-1039); Google Play restricts them.
+	 * Package-private so a test can assert the modern method form is not missed.
+	 */
+	static final String DEVICE_ID_REGEX =
+			"Build\\.SERIAL|Build\\.getSerial\\s*\\(|getDeviceId\\s*\\(|getSubscriberId|getSimSerialNumber|"
+					+ "Settings\\.Secure\\.getString.*android_id|ANDROID_ID";
 
 	private static final class Rule {
 		final Pattern pattern;
@@ -90,10 +100,8 @@ public class InsecureApiScanCommand extends AbstractCommand {
 				"DevicePolicyManager / DeviceAdminReceiver — device administration capabilities; "
 						+ "can lock screen, wipe data, set password policies; verify this is a legitimate "
 						+ "MDM/parental control app, not ransomware"),
-		new Rule("Build\\.SERIAL|getDeviceId\\s*\\(|getSubscriberId|getSimSerialNumber|"
-				+ "Settings\\.Secure\\.getString.*android_id|ANDROID_ID",
-				"device_identifier", "medium",
-				"Persistent device identifier (Build.SERIAL / ANDROID_ID / getDeviceId / "
+		new Rule(DEVICE_ID_REGEX, "device_identifier", "medium",
+				"Persistent device identifier (Build.SERIAL / Build.getSerial() / ANDROID_ID / getDeviceId / "
 						+ "getSubscriberId / getSimSerialNumber) — enables device fingerprinting; "
 						+ "Google Play restricts these APIs; prefer instance IDs or advertising ID"),
 		new Rule("Settings\\.Secure|Settings\\.Global", "settings_secure_read", "info",
