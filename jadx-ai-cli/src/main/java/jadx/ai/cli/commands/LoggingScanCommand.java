@@ -22,7 +22,8 @@ import jadx.api.JavaClass;
  *
  * <p>Detection, per source line, is a logging sink whose message looks sensitive:
  * <ul>
- *   <li><b>Sink</b> — {@code Log.v/d/i/w/e/wtf(...)}, {@code System.out/err.print(ln)?(...)},
+ *   <li><b>Sink</b> — {@code Log.v/d/i/w/e/wtf(...)} / {@code Log.println(...)},
+ *       {@code System.out/err.print(ln)?(...)},
  *       {@code printStackTrace(...)}, or a common logger ({@code Timber.}, {@code Logger.},
  *       {@code Slf4j}-style {@code log.}).</li>
  *   <li><b>Sensitivity</b> — the line mentions a sensitive keyword ({@code password}, {@code passwd},
@@ -50,8 +51,15 @@ public class LoggingScanCommand extends AbstractCommand {
 	@Option(names = { "--limit" }, description = "Maximum number of findings", defaultValue = "300")
 	protected int limit = 300;
 
-	private static final Pattern LOG_SINK = Pattern.compile(
-			"\\bLog\\.(v|d|i|w|e|wtf)\\s*\\(|System\\.(out|err)\\.print(ln)?\\s*\\(|\\.printStackTrace\\s*\\(|\\bTimber\\.[a-z]+\\s*\\(|\\bLogger\\.[a-z]+\\s*\\(");
+	/**
+	 * Logging sinks. Includes {@code Log.println(priority, tag, msg)} — the static direct-to-logcat
+	 * write that the enumerated {@code Log.(v|d|i|w|e|wtf)} set missed, so a
+	 * {@code Log.println(Log.DEBUG, TAG, "token="+token)} line was not inventoried here (log-info-leak-scan's
+	 * {@code Log\.[a-z]+} prefix already covered it, leaving the two scanners asymmetric). Package-private
+	 * so a test can assert {@code Log.println} is a sink.
+	 */
+	static final Pattern LOG_SINK = Pattern.compile(
+			"\\bLog\\.(v|d|i|w|e|wtf|println)\\s*\\(|System\\.(out|err)\\.print(ln)?\\s*\\(|\\.printStackTrace\\s*\\(|\\bTimber\\.[a-z]+\\s*\\(|\\bLogger\\.[a-z]+\\s*\\(");
 
 	private static final Pattern STACK_TRACE = Pattern.compile("\\.printStackTrace\\s*\\(");
 
