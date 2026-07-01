@@ -56,6 +56,21 @@ public class SqlInjectionScanCommand extends AbstractCommand {
 	/** Two string fragments joined by {@code +} — the concatenation that makes a query injectable. */
 	private static final Pattern CONCAT = Pattern.compile("\"\\s*\\+|\\+\\s*\"");
 
+	/**
+	 * A query argument built dynamically on the same line as a SQL sink, but NOT via {@code +} —
+	 * {@code String.format}, {@code StringBuilder.append}, {@code .concat}, or {@code MessageFormat}.
+	 * Same injection class as {@code +} concatenation, but {@code CONCAT} does not match it, so the line
+	 * hit {@code if (!concat) continue;} and the finding was dropped entirely (e.g.
+	 * {@code db.rawQuery(String.format("SELECT ... WHERE name='%s'", name), null)}). Matched only inside
+	 * a SQL-sink argument (up to the next {@code ;}) so a {@code String.format} used elsewhere on the
+	 * line is not a false positive.
+	 */
+	static final Pattern SQL_DYNAMIC_ARG = Pattern.compile(
+			"(?:rawQuery(?:WithFactory)?\\s*\\(|execSQL\\s*\\(|execPerConnectionSQL\\s*\\(|compileStatement\\s*\\(|\\.query(?:WithFactory)?\\s*\\()\\s*"
+					+ "(?:String\\.format|MessageFormat|new\\s+StringBuilder)"
+					+ "|(?:rawQuery(?:WithFactory)?\\s*\\(|execSQL\\s*\\(|execPerConnectionSQL\\s*\\(|compileStatement\\s*\\(|\\.query(?:WithFactory)?\\s*\\()[^;]*?"
+					+ "\\.(?:concat|append)\\s*\\(");
+
 	private static final Pattern RAW_QUERY = Pattern.compile("rawQuery(WithFactory)?\\s*\\(");
 	private static final Pattern EXEC_SQL = Pattern.compile("execSQL\\s*\\(|execPerConnectionSQL\\s*\\(");
 	private static final Pattern COMPILE_STMT = Pattern.compile("compileStatement\\s*\\(");
@@ -98,7 +113,7 @@ public class SqlInjectionScanCommand extends AbstractCommand {
 			for (int i = 0; i < lines.length && findings.size() < limit; i++) {
 				String line = lines[i];
 				int ln = i + 1;
-				boolean concat = CONCAT.matcher(line).find();
+				boolean concat = isSqlConcatenation(line);
 				if (!concat) {
 					continue; // injection requires concatenation; a parameterized/static query is safe
 				}
@@ -136,6 +151,19 @@ public class SqlInjectionScanCommand extends AbstractCommand {
 		data.put("highSeverityCount", highSeverityCount);
 		data.put("truncated", findings.size() >= limit);
 		return JsonOutput.ok(data);
+	}
+
+	/**
+	 * True if the line builds a SQL argument dynamically — either literal-variable {@code +}
+	 * concatenation, or a {@code String.format}/{@code StringBuilder.append}/{@code .concat}/
+	 * {@code MessageFormat} form feeding a SQL sink. Package-private so a test can assert both forms
+	 * fire and a parameterized query does not.
+	 */
+	static boolean isSqlConcatenation(String line) {
+		if (line == null) {
+			return false;
+		}
+		return CONCAT.matcher(line).find() || SQL_DYNAMIC_ARG.matcher(line).find();
 	}
 
 	private static Map<String, Object> finding(String cls, int line, String kind, String severity, String detail) {
