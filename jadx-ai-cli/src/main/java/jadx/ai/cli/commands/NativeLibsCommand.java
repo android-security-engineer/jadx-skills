@@ -11,6 +11,7 @@ import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 
 import jadx.ai.cli.output.JsonOutput;
+import jadx.ai.cli.util.SecretPatterns;
 import jadx.api.JadxDecompiler;
 import jadx.api.ResourceFile;
 import jadx.api.ResourceType;
@@ -20,17 +21,20 @@ import jadx.api.ResourcesLoader;
  * Triage the bundled native libraries — the half of an Android app jadx cannot decompile. JADX
  * stops at the Dalvik/ART boundary; everything in {@code lib/<abi>/*.so} (the JNI implementations,
  * packers' unpacking stubs, statically-linked OpenSSL, C2 URLs, anti-debug / root-detection
- * logic) is invisible to {@code secrets-scan} / {@code ioc-extract}, which only see Java. This
- * command reads each {@code .so}'s raw bytes (via {@link ResourcesLoader#decodeStream}), runs a
- * {@code strings}-style printable-ASCII extraction, surfaces the exported {@code JNI_OnLoad} /
- * {@code Java_*} symbols (the actual native attack surface that pairs with
- * {@link NativeBridgeIndexCommand}'s Java side), and categorises interesting strings
- * (URLs/IPs, dynamic loading, process exec, anti-debug/anti-frida, root detection, crypto). It is
- * a lightweight, in-process absorption of the first thing you'd do in radare2/Ghidra/IDA, with no
+ * logic) is where {@code secrets-scan} / {@code ioc-extract} normally cannot see, because they
+ * only read Java. This command reads each {@code .so}'s raw bytes (via
+ * {@link ResourcesLoader#decodeStream}), runs a {@code strings}-style printable-ASCII extraction,
+ * surfaces the exported {@code JNI_OnLoad} / {@code Java_*} symbols (the actual native attack
+ * surface that pairs with {@link NativeBridgeIndexCommand}'s Java side), categorises interesting
+ * strings (URLs/IPs, dynamic loading, process exec, anti-debug/anti-frida, root detection,
+ * crypto), and — crucially — runs the SAME curated secret rules as {@code secrets-scan}
+ * ({@link jadx.ai.cli.util.SecretPatterns}) over those strings, so API keys / tokens / private
+ * keys relocated into native code to dodge Java-level scanners are still caught. It is a
+ * lightweight, in-process absorption of the first thing you'd do in radare2/Ghidra/IDA, with no
  * external disassembler required.
  *
- * Returns {@code {libraries:[{name,abi,sizeBytes,truncated,stringCount,jniSymbols,findings}],
- * libraryCount, findingCount, abis}}.
+ * Returns {@code {libraries:[{name,abi,sizeBytes,truncated,stringCount,jniSymbols,findings,
+ * secrets}], libraryCount, findingCount, secretCount, abis}}.
  */
 @Command(name = "native-libs",
 		description = "Triage bundled native .so libraries: strings, JNI symbols, and IOC/anti-debug/root/crypto markers")
@@ -76,6 +80,7 @@ public class NativeLibsCommand extends AbstractCommand {
 	protected Object execute(JadxDecompiler decompiler) throws Exception {
 		List<Map<String, Object>> libraries = new ArrayList<>();
 		int totalFindings = 0;
+		int totalSecrets = 0;
 		List<String> abis = new ArrayList<>();
 
 		for (ResourceFile res : decompiler.getResources()) {
@@ -119,6 +124,12 @@ public class NativeLibsCommand extends AbstractCommand {
 			scanFindings(strings, findings, limit);
 			totalFindings += findings.size();
 
+			// Run the SAME curated secret rules secrets-scan uses, but over the .so's carved
+			// strings — API keys / tokens / private keys are often relocated into native code
+			// precisely because a Java-only scanner never looks here.
+			List<Map<String, Object>> secrets = SecretPatterns.scanStrings(strings, name, "native", limit);
+			totalSecrets += secrets.size();
+
 			String abi = extractAbi(name);
 			if (abi != null && !abis.contains(abi)) {
 				abis.add(abi);
@@ -132,6 +143,7 @@ public class NativeLibsCommand extends AbstractCommand {
 			lib.put("stringCount", strings.size());
 			lib.put("jniSymbols", jniSymbols);
 			lib.put("findings", findings);
+			lib.put("secrets", secrets);
 			if (allStrings) {
 				lib.put("strings", strings.size() > limit ? strings.subList(0, limit) : strings);
 			}
@@ -142,6 +154,7 @@ public class NativeLibsCommand extends AbstractCommand {
 		data.put("libraries", libraries);
 		data.put("libraryCount", libraries.size());
 		data.put("findingCount", totalFindings);
+		data.put("secretCount", totalSecrets);
 		data.put("abis", abis);
 		return JsonOutput.ok(data);
 	}
