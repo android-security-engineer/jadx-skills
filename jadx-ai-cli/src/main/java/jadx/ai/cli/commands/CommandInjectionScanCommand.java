@@ -49,8 +49,23 @@ public class CommandInjectionScanCommand extends AbstractCommand {
 	private static final Pattern EXEC_MARKER =
 			Pattern.compile("Runtime|ProcessBuilder|\\.exec\\s*\\(|getRuntime\\s*\\(");
 
-	/** Two fragments joined by {@code +} — the concatenation that makes a command injectable. */
+	/** Two fragments joined by {@code +} — the literal-variable concatenation that makes a command injectable. */
 	private static final Pattern CONCAT = Pattern.compile("\"\\s*\\+|\\+\\s*\"");
+
+	/**
+	 * A command argument built dynamically on the same line as the exec/ProcessBuilder sink, but NOT via
+	 * {@code +} — {@code String.format}, {@code StringBuilder.append}, {@code .concat}, or
+	 * {@code MessageFormat}. These are the same injection class (attacker-controlled format-arg / append
+	 * payload) but were missed by the {@code CONCAT} regex, so the line fell through to
+	 * {@code process_exec/info} instead of {@code command_injection/high}. Matched only inside an
+	 * {@code exec(}/ {@code new ProcessBuilder(} argument (up to the next {@code ;}) so a
+	 * {@code String.format} used for logging elsewhere on the line is not a false positive.
+	 */
+	static final Pattern EXEC_DYNAMIC_ARG = Pattern.compile(
+			"(?:\\.exec\\s*\\(|new\\s+ProcessBuilder\\s*\\(|ProcessBuilder\\s*\\()\\s*"
+					+ "(?:String\\.format|MessageFormat|new\\s+StringBuilder)"
+					+ "|(?:\\.exec\\s*\\(|new\\s+ProcessBuilder\\s*\\(|ProcessBuilder\\s*\\()[^;]*?"
+					+ "\\.(?:concat|append)\\s*\\(");
 
 	private static final Pattern EXEC = Pattern.compile("\\.exec\\s*\\(");
 	private static final Pattern PROCESS_BUILDER = Pattern.compile("new\\s+ProcessBuilder\\s*\\(|ProcessBuilder\\s*\\(");
@@ -98,7 +113,7 @@ public class CommandInjectionScanCommand extends AbstractCommand {
 				if (!isExec && !isPb) {
 					continue;
 				}
-				boolean concat = CONCAT.matcher(line).find();
+				boolean concat = isCommandConcatenation(line);
 				boolean shell = SHELL.matcher(line).find();
 				boolean su = SU.matcher(line).find();
 
@@ -132,6 +147,19 @@ public class CommandInjectionScanCommand extends AbstractCommand {
 		data.put("highSeverityCount", highSeverityCount);
 		data.put("truncated", findings.size() >= limit);
 		return JsonOutput.ok(data);
+	}
+
+	/**
+	 * True if the line builds a command argument dynamically — either literal-variable {@code +}
+	 * concatenation, or a {@code String.format}/{@code StringBuilder.append}/{@code .concat}/
+	 * {@code MessageFormat} form feeding an exec/ProcessBuilder sink. Package-private so a test can
+	 * assert both forms fire and a static exec does not.
+	 */
+	static boolean isCommandConcatenation(String line) {
+		if (line == null) {
+			return false;
+		}
+		return CONCAT.matcher(line).find() || EXEC_DYNAMIC_ARG.matcher(line).find();
 	}
 
 	private static Map<String, Object> finding(String cls, int line, String kind, String severity, String detail) {
