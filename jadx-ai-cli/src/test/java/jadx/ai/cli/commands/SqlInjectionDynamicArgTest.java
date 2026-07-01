@@ -56,4 +56,13 @@ class SqlInjectionDynamicArgTest {
 		assertFalse(concat("Log.i(TAG, String.format(\"rows=%d\", n));"),
 				"String.format not feeding a SQL sink is not SQL concatenation");
 	}
+
+	@Test
+	void parameterizedQueryWithUnrelatedStringFormatOnSameLineDoesNotFire() {
+		// After widening SQL_DYNAMIC_ARG's first branch from sink-immediately-followed-by to
+		// sink-then-[^;]*?-followed-by, guard against the FP where a parameterized query shares a
+		// line with an unrelated String.format. The String.format here builds a log message, not SQL.
+		assertFalse(concat("db.query(\"t\", cols, \"n=?\", args, null, null, null); Log.i(TAG, String.format(\"r=%d\", n));"),
+				"a parameterized query must not fire just because an unrelated String.format sits after the ; on the same line");
+	}
 }
