@@ -33,7 +33,8 @@ import jadx.api.JavaClass;
  *       — command injection if args are user-controlled</li>
  *   <li>{@code su_command} — "su" or "sudo" in command string — attempts to
  *       execute with elevated privileges; may indicate root requirements</li>
- *   <li>{@code shell_execution} — "sh -c" or "bash -c" pattern — shell
+ *   <li>{@code shell_execution} — "sh -c" or "bash -c" pattern (incl. Android
+ *       {@code /system/bin/sh}) — shell
  *       interpretation of command enables metacharacter injection</li>
  *   <li>{@code runtime_exec} — Runtime.exec() with string literal — inventory;
  *       fixed commands are safe but worth auditing</li>
@@ -71,10 +72,20 @@ public class SubprocessScanCommand extends AbstractCommand {
 					+ "exec\\s*\\(\\s*\"su|Runtime.*\"su\"|"
 					+ "ProcessBuilder.*\"su\"|\"/system/bin/su\"|"
 					+ "\"/system/xbin/su\"");
-	private static final Pattern SHELL_EXECUTION = Pattern.compile(
+	/**
+	 * Shell execution — a shell ({@code sh}/{@code bash}) interpreting a command string enables
+	 * metacharacter injection. Covers the {@code "sh","-c"} arg-list form, the {@code sh -c} inline form,
+	 * and the absolute-path forms {@code "/bin/sh"}/{@code "/bin/bash"} AND the Android-specific
+	 * {@code "/system/bin/sh"} — Android's shell lives at {@code /system/bin/sh}, and the {@code /bin/sh}
+	 * arm alone missed a {@code new ProcessBuilder("/system/bin/sh","-c",cmd)} line (the {@code /bin/sh}
+	 * substring is there but not preceded by a quote, so the anchored {@code "/bin/sh"} did not match).
+	 * Package-private so a test can assert the Android shell path fires.
+	 */
+	static final Pattern SHELL_EXECUTION = Pattern.compile(
 			"\"sh\"\\s*,\\s*\"-c\"|\"bash\"\\s*,\\s*\"-c\"|"
 					+ "sh\\s+-c|bash\\s+-c|"
 					+ "\"/bin/sh\"|\"/bin/bash\"|"
+					+ "\"/system/bin/sh\"|\"/system/bin/bash\"|"
 					+ "ProcessBuilder.*sh.*-c");
 	private static final Pattern RUNTIME_EXEC_LITERAL = Pattern.compile(
 			"Runtime\\.exec\\s*\\(\\s*\"|getRuntime\\(\\)\\.exec\\s*\\(\\s*\"");
