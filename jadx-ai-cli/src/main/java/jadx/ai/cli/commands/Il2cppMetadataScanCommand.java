@@ -1,6 +1,5 @@
 package jadx.ai.cli.commands;
 
-import java.io.ByteArrayInputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
@@ -14,6 +13,7 @@ import picocli.CommandLine.Option;
 import jadx.ai.cli.output.JsonOutput;
 import jadx.api.JadxDecompiler;
 import jadx.api.ResourceFile;
+import jadx.api.ResourcesLoader;
 
 /**
  * Scans Unity IL2CPP {@code global-metadata.dat} embedded in the APK and
@@ -37,6 +37,9 @@ public class Il2cppMetadataScanCommand extends AbstractCommand {
 
 	private static final int IL2CPP_MAGIC = 0xFAB11BAF;
 
+	/** Cap raw read of global-metadata.dat (128 MiB — large Unity games can have big metadata). */
+	private static final long MAX_METADATA_BYTES = 134217728L;
+
 	@Override
 	protected void applyArgs(Map<String, Object> args) {
 		if (args.containsKey("limit")) {
@@ -52,10 +55,13 @@ public class Il2cppMetadataScanCommand extends AbstractCommand {
 			String name = res.getOriginalName();
 			if (name != null && name.replace('\\', '/').endsWith("global-metadata.dat")) {
 				try {
-					String text = res.loadContent().getText().toString();
-					metadataBytes = text.getBytes("ISO-8859-1");
+					// global-metadata.dat is BINARY — must read raw bytes via decodeStream. Reading it
+					// through loadContent().getText() (the old path) either NPEs or lossily text-decodes
+					// the bytes, corrupting every offset so the IL2CPP magic check always failed.
+					metadataBytes = ResourcesLoader.decodeStream(res,
+							(size, is) -> is.readNBytes((int) Math.min(MAX_METADATA_BYTES, Integer.MAX_VALUE)));
 				} catch (Exception e) {
-					// Try alternative: load as raw bytes not available in this API
+					// leave metadataBytes null → reported as "not found" below
 				}
 				break;
 			}
