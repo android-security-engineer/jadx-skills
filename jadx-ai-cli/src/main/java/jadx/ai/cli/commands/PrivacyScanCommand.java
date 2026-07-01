@@ -56,9 +56,17 @@ public class PrivacyScanCommand extends AbstractCommand {
 		}
 	}
 
+	/** Hardware/SIM persistent identifiers — the {@code device_identifier} rule. Package-private for testing. */
+	static final String DEVICE_IDENTIFIER_REGEX =
+			"getDeviceId\\s*\\(|getImei\\s*\\(|getMeid\\s*\\(|getSubscriberId\\s*\\(|"
+					+ "getSimSerialNumber\\s*\\(|getIccSerialNumber\\s*\\(|getLine1Number\\s*\\(|"
+					+ "Build\\.SERIAL|getSerial\\s*\\(|"
+					+ "getWidevineDeviceId\\s*\\(|getPropertyMediaDrm";
+
 	/** Any line matching the marker anchors the scan to a privacy-relevant class. */
 	private static final Pattern PRIVACY_MARKER = Pattern.compile(
-			"getDeviceId|getImei|getSubscriberId|getSimSerialNumber|Build\\.SERIAL|getSerial|"
+			"getDeviceId|getImei|getMeid|getSubscriberId|getSimSerialNumber|getIccSerialNumber|"
+					+ "Build\\.SERIAL|getSerial|getWidevineDeviceId|getPropertyMediaDrm|"
 					+ "ANDROID_ID|getAdvertisingId|AdvertisingIdClient|getLastKnownLocation|requestLocationUpdates|"
 					+ "FusedLocation|ContactsContract|content://contacts|AccountManager|getAccounts|"
 					+ "getInstalledPackages|getInstalledApplications|queryIntentActivities|MediaRecorder|"
@@ -66,9 +74,9 @@ public class PrivacyScanCommand extends AbstractCommand {
 
 	/** First matching rule wins per line. Ordered most-specific first. */
 	private static final List<Rule> RULES = List.of(
-			new Rule("getDeviceId\\s*\\(|getImei\\s*\\(|getSubscriberId\\s*\\(|getSimSerialNumber\\s*\\(|getMeid\\s*\\(|Build\\.SERIAL|getSerial\\s*\\(|getLine1Number\\s*\\(",
+			new Rule(DEVICE_IDENTIFIER_REGEX,
 					"device_identifier",
-					"Reads a hardware/SIM identifier (IMEI / MEID / IMSI / SIM serial / Build.SERIAL / phone number) — a persistent cross-reset tracking ID"),
+					"Reads a hardware/SIM identifier (IMEI / MEID / IMSI / SIM serial / ICC serial / Build.SERIAL / phone number / Widevine MediaDrm device ID) — a persistent cross-reset tracking ID"),
 			new Rule("Settings\\.Secure\\.ANDROID_ID|\"android_id\"|getString\\s*\\([^)]*ANDROID_ID",
 					"device_identifier",
 					"Reads ANDROID_ID — a per-app-signing-key device ID used for tracking; no permission required"),
