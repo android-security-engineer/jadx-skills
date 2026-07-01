@@ -93,20 +93,44 @@ public class InsecureDeeplinkHandlerScanCommand extends AbstractCommand {
 				&& line != null && FILE_SINK.matcher(line).find();
 	}
 
-	private static final Pattern SQL_INJECTION = Pattern.compile(
-			"getQueryParameter.*rawQuery|getQueryParameter.*execSQL|"
-					+ "getQueryParameter.*query\\s*\\(|getData.*rawQuery|"
-					+ "uri.*selection.*getQueryParameter|"
-					+ "getData.*insert\\s*\\(|getData.*update\\s*\\(");
-	private static final Pattern WEBVIEW_LOAD = Pattern.compile(
-			"getData.*loadUrl|getData.*loadData|"
-					+ "getQueryParameter.*loadUrl|uri.*loadUrl|"
-					+ "getData.*WebView|uri.*WebView.*loadUrl|"
-					+ "deepLink.*loadUrl|deeplink.*loadUrl");
-	private static final Pattern CLASS_LOADING = Pattern.compile(
-			"getQueryParameter.*Class\\.forName|getQueryParameter.*instantiate|"
-					+ "getData.*Class\\.forName|getData.*Fragment\\.instantiate|"
-					+ "uri.*loadClass|deeplink.*forName");
+	/**
+	 * SQL sinks reachable from a deep-link parameter — matched <b>per line</b> when the class also has
+	 * a {@link #DEEPLINK_SOURCE}. The old same-line {@code getQueryParameter.*rawQuery} AND missed the
+	 * cross-line form ({@code String q = uri.getQueryParameter("q"); db.rawQuery(q, null)}).
+	 * Package-private for testing.
+	 */
+	static final Pattern SQL_SINK = Pattern.compile(
+			"\\.rawQuery\\s*\\(|\\.execSQL\\s*\\(|\\.query\\s*\\(|\\.insert\\s*\\(|\\.update\\s*\\(");
+
+	/**
+	 * WebView URL sinks reachable from a deep-link parameter — per line when the class has a
+	 * {@link #DEEPLINK_SOURCE}. Covers the cross-line form
+	 * ({@code Uri u = getIntent().getData(); webView.loadUrl(u.toString())}).
+	 */
+	static final Pattern WEBVIEW_SINK = Pattern.compile(
+			"\\.loadUrl\\s*\\(|\\.loadData\\s*\\(|\\.loadDataWithBaseURL\\s*\\(");
+
+	/**
+	 * Class-loading sinks reachable from a deep-link parameter — per line when the class has a
+	 * {@link #DEEPLINK_SOURCE}. Covers {@code Class.forName}/{@code Fragment.instantiate}/
+	 * {@code loadClass} fed by a deep-link value on another line.
+	 */
+	static final Pattern CLASS_LOAD_SINK = Pattern.compile(
+			"Class\\.forName\\s*\\(|Fragment\\.instantiate\\s*\\(|\\.loadClass\\s*\\(");
+
+	/**
+	 * True iff the line is a deep-link-driven sink and the class takes a deep-link URI — the cross-line
+	 * deeplink_sink signal (sql / webview / class-load). The sink line stays the per-line anchor.
+	 * Package-private for testing.
+	 */
+	static boolean deeplinkSinkSignal(boolean classHasDeepLinkSource, String line) {
+		if (!classHasDeepLinkSource || line == null) {
+			return false;
+		}
+		return SQL_SINK.matcher(line).find()
+				|| WEBVIEW_SINK.matcher(line).find()
+				|| CLASS_LOAD_SINK.matcher(line).find();
+	}
 	private static final Pattern AUTH_DECISION = Pattern.compile(
 			"getQueryParameter.*(?:isAdmin|isRoot|role|auth|token|session)|"
 					+ "getData.*(?:isAdmin|isRoot|role|auth)|"
@@ -132,15 +156,9 @@ public class InsecureDeeplinkHandlerScanCommand extends AbstractCommand {
 		// deeplink_path_traversal is handled separately (class-scoped DEEPLINK_SOURCE ∧ per-line
 		// FILE_SINK) — see deeplinkPathTraversalSignal below — because jadx decompiles the source and
 		// the file sink onto different lines, which a same-line .* AND would miss.
-		new Rule(SQL_INJECTION, "deeplink_sql_injection", "high",
-				"Deep-link parameter used in SQL — SQL injection via crafted URL "
-						+ "parameters; use parameterized queries (selectionArgs)"),
-		new Rule(WEBVIEW_LOAD, "deeplink_webview_load", "high",
-				"Deep-link URL loaded in WebView — XSS/phishing via crafted URL; "
-						+ "validate URL against whitelist before loading"),
-		new Rule(CLASS_LOADING, "deeplink_class_loading", "high",
-				"Deep-link parameter used for class loading — code injection via "
-						+ "crafted URL parameter; validate class name against whitelist"),
+		// deeplink_sql_injection / deeplink_webview_load / deeplink_class_loading are likewise handled
+		// separately (class-scoped DEEPLINK_SOURCE ∧ per-line SQL_SINK/WEBVIEW_SINK/CLASS_LOAD_SINK) —
+		// see deeplinkSinkSignal — for the same cross-line reason.
 		new Rule(AUTH_DECISION, "deeplink_auth_decision", "high",
 				"Deep-link parameter used for auth decision — privilege escalation "
 						+ "via crafted URL parameters; never trust URL data for auth"),
@@ -208,6 +226,36 @@ public class InsecureDeeplinkHandlerScanCommand extends AbstractCommand {
 					reportedKinds.add("deeplink_path_traversal");
 					highSeverityCount++;
 					hasPathTraversal = true;
+					continue;
+				}
+
+				// Class-scoped deeplink sinks (sql / webview / class-load): the first matching sink
+				// line of a class that takes a deep-link URI. Covers both the same-line (method-chain)
+				// and the cross-line (Uri u = getData(); webView.loadUrl(u.toString())) forms.
+				if (deeplinkSinkSignal(classHasDeepLinkSource, line)) {
+					if (!reportedKinds.contains("deeplink_sql_injection")
+							&& SQL_SINK.matcher(line).find()) {
+						findings.add(finding("deeplink_sql_injection", "high", fullName, i + 1,
+								"Deep-link parameter used in SQL — SQL injection via crafted URL "
+										+ "parameters; use parameterized queries (selectionArgs)"));
+						reportedKinds.add("deeplink_sql_injection");
+						highSeverityCount++;
+						hasSqlInjection = true;
+					} else if (!reportedKinds.contains("deeplink_webview_load")
+							&& WEBVIEW_SINK.matcher(line).find()) {
+						findings.add(finding("deeplink_webview_load", "high", fullName, i + 1,
+								"Deep-link URL loaded in WebView — XSS/phishing via crafted URL; "
+										+ "validate URL against whitelist before loading"));
+						reportedKinds.add("deeplink_webview_load");
+						highSeverityCount++;
+					} else if (!reportedKinds.contains("deeplink_class_loading")
+							&& CLASS_LOAD_SINK.matcher(line).find()) {
+						findings.add(finding("deeplink_class_loading", "high", fullName, i + 1,
+								"Deep-link parameter used for class loading — code injection via "
+										+ "crafted URL parameter; validate class name against whitelist"));
+						reportedKinds.add("deeplink_class_loading");
+						highSeverityCount++;
+					}
 					continue;
 				}
 
