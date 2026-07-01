@@ -30,6 +30,12 @@ import jadx.api.JavaClass;
  * <ul>
  *   <li>{@code ecb_mode} — AES/DES/Blowfish with "/ECB/" in transformation
  *       string — identical plaintext blocks produce identical ciphertext</li>
+ *   <li>{@code implicit_ecb_mode} — bare algorithm name (e.g. "AES") — the JCA
+ *       provider silently defaults block ciphers to ECB; the most common flaw</li>
+ *   <li>{@code rsa_without_oaep} — bare "RSA", RSA/None/NoPadding (textbook RSA)
+ *       or RSA/ECB/PKCS1Padding — Bleichenbacher/textbook-RSA prone; use OAEP</li>
+ *   <li>{@code static_iv} — hardcoded/literal IV in IvParameterSpec — a fixed IV
+ *       defeats CBC/GCM semantic security (nonce reuse)</li>
  *   <li>{@code no_iv_specified} — Cipher.getInstance without IvParameterSpec
  *       or GCMParameterSpec — defaults to ECB for block ciphers</li>
  *   <li>{@code md5_for_security} — MD5 used for password hashing or
@@ -92,6 +98,20 @@ public class CryptographicMisuseScanCommand extends AbstractCommand {
 					+ "secureRandom\\.setSeed\\s*\\(");
 	private static final Pattern CUSTOM_CIPHER = Pattern.compile(
 			"Cipher\\.getInstance\\s*\\(\\s*\"[A-Z]+/[A-Z]+/[A-Z]+\"");
+	// Bare algorithm name (no mode/padding) — JCA defaults block ciphers to ECB. The single most
+	// common real-world crypto flaw and invisible to the explicit-"/ECB" pattern above.
+	static final Pattern IMPLICIT_ECB = Pattern.compile(
+			"Cipher\\.getInstance\\s*\\(\\s*\"(AES|DES|DESede|Blowfish|RC2|Camellia|SEED)\"\\s*[,)]");
+	// RSA without OAEP: bare "RSA" (defaults to RSA/ECB/PKCS1Padding), textbook RSA/None/NoPadding,
+	// or explicit PKCS1v1.5 — all Bleichenbacher/textbook-RSA prone; OAEP is the safe padding.
+	static final Pattern RSA_NO_OAEP = Pattern.compile(
+			"Cipher\\.getInstance\\s*\\(\\s*\"RSA\"\\s*[,)]|"
+					+ "Cipher\\.getInstance\\s*\\(\\s*\"RSA/(ECB|None|NONE)/"
+					+ "(PKCS1Padding|NoPadding|NOPADDING)\"");
+	// Hardcoded/static IV: a literal byte-array or string-literal IV defeats CBC/GCM nonce semantics.
+	static final Pattern STATIC_IV = Pattern.compile(
+			"new\\s+IvParameterSpec\\s*\\(\\s*(new\\s+byte\\s*\\[\\s*\\]\\s*\\{"
+					+ "|\"[^\"]*\"\\s*\\.getBytes)");
 
 	private static final class Rule {
 		final Pattern pattern;
@@ -110,6 +130,17 @@ public class CryptographicMisuseScanCommand extends AbstractCommand {
 		new Rule(ECB_MODE, "ecb_mode", "high",
 				"ECB mode — identical plaintext blocks produce identical ciphertext; "
 						+ "use CBC/GCM/CTR with random IV for confidentiality"),
+		new Rule(IMPLICIT_ECB, "implicit_ecb_mode", "high",
+				"Block cipher requested by bare algorithm name (e.g. \"AES\") — the JCA provider "
+						+ "silently defaults to ECB mode; specify AES/GCM/NoPadding (preferred) or "
+						+ "AES/CBC/PKCS5Padding with a fresh random IV"),
+		new Rule(RSA_NO_OAEP, "rsa_without_oaep", "high",
+				"RSA without OAEP padding — bare \"RSA\"/RSA/None/NoPadding (textbook RSA) or "
+						+ "RSA/ECB/PKCS1Padding (Bleichenbacher padding-oracle prone); use "
+						+ "RSA/ECB/OAEPwithSHA-256andMGF1Padding"),
+		new Rule(STATIC_IV, "static_iv", "high",
+				"Hardcoded/static IV passed to IvParameterSpec — a fixed IV defeats CBC/GCM "
+						+ "semantic security (nonce reuse); generate a fresh random IV per encryption"),
 		new Rule(MD5_SECURITY, "md5_for_security", "high",
 				"MD5 used for security — collision-vulnerable since 2004; use SHA-256 "
 						+ "or SHA-3 for integrity verification and bcrypt/PBKDF2 for passwords"),
@@ -184,7 +215,7 @@ public class CryptographicMisuseScanCommand extends AbstractCommand {
 						if ("high".equals(r.severity)) {
 							highSeverityCount++;
 						}
-						if ("ecb_mode".equals(r.kind)) {
+						if ("ecb_mode".equals(r.kind) || "implicit_ecb_mode".equals(r.kind)) {
 							hasEcbMode = true;
 						}
 						if ("md5_for_security".equals(r.kind) || "sha1_for_security".equals(r.kind)) {
