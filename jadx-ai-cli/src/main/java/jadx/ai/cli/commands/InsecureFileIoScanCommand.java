@@ -14,6 +14,8 @@ import picocli.CommandLine.Option;
 import jadx.ai.cli.output.JsonOutput;
 import jadx.api.JadxDecompiler;
 import jadx.api.JavaClass;
+import jadx.api.ResourceFile;
+import jadx.api.ResourceType;
 
 /**
  * Insecure file I/O scanner — MASVS MSTG-STORAGE.
@@ -36,8 +38,10 @@ import jadx.api.JavaClass;
  *       file without encryption — extractable from device backup or root</li>
  *   <li>{@code temp_file_race} — File.createTempFile without secure
  *       delete — TOCTOU race condition; use FileProvider instead</li>
- *   <li>{@code file_provider_misconfig} — FileProvider with overly broad
- *       path grant (external-files-path root, /) — exposes all files</li>
+ *   <li>{@code file_provider_misconfig} — FileProvider usage in code (info, verify path config) OR
+ *       a {@code res/xml/*paths*.xml} declaring an overly-broad path ({@code <root-path>}, external
+ *       path with {@code path="/"} or {@code ""}, or {@code grant-all-permissions}) — the latter is
+ *       high severity: any URI holder reads the filesystem root / external storage (CWE-22/CWE-732)</li>
  *   <li>{@code internal_file_io} — File I/O on internal storage —
  *       positive indicator; internal storage is app-private by default</li>
  * </ul>
@@ -85,6 +89,25 @@ public class InsecureFileIoScanCommand extends AbstractCommand {
 					+ "external-files-path|external-path|"
 					+ "external-cache-path|files-path|cache-path|"
 					+ "grantUriPermission");
+
+	/**
+	 * Overly-broad FileProvider path declarations in a {@code res/xml/file_paths.xml} resource.
+	 * {@code <root-path path=""/>} exposes the entire filesystem root; {@code <external-path ... path="/"/>}
+	 * or {@code path=""} exposes all of external storage; {@code grant-all-permissions} in the provider
+	 * tag widens every granted URI. Combined with {@code FLAG_GRANT_READ_URI_PERMISSION} any holder of the
+	 * content URI reads/arbitrarily many files (CWE-22 / CWE-732, MASVS MSTG-STORAGE-10). The old
+	 * {@code file_provider_misconfig} rule only flagged FileProvider *usage* in code with an info
+	 * "verify path config" note — it never read the path XML, so a real root-path exposure passed silently.
+	 * Package-private for testing.
+	 */
+	static final Pattern BROAD_FILE_PATH = Pattern.compile(
+			"<root-path\\b|"
+					+ "<external-path\\b[^>]*\\bpath\\s*=\\s*\"(?:/|\"|\\s*\")|"
+					+ "<external-cache-path\\b[^>]*\\bpath\\s*=\\s*\"(?:/|\"|\\s*\")|"
+					+ "<external-files-path\\b[^>]*\\bpath\\s*=\\s*\"(?:/|\"|\\s*\")|"
+					+ "<files-path\\b[^>]*\\bpath\\s*=\\s*\"(?:/|\"|\\s*\")|"
+					+ "<cache-path\\b[^>]*\\bpath\\s*=\\s*\"(?:/|\"|\\s*\")|"
+					+ "grant-all-permissions");
 	private static final Pattern INTERNAL_FILE = Pattern.compile(
 			"getFilesDir|getCacheDir|getDir\\s*\\(|"
 					+ "openFileOutput\\s*\\(\\s*\"|"
@@ -179,6 +202,52 @@ public class InsecureFileIoScanCommand extends AbstractCommand {
 						break;
 					}
 				}
+			}
+		}
+
+		// Resource scan: a FileProvider path XML declaring a root/external-root path exposes the whole
+		// filesystem (CWE-22/CWE-732) — the code-level file_provider_misconfig/info rule can't see this;
+		// the path config lives in res/xml/file_paths.xml, decoded as an XML resource. ONE per resource.
+		if (findings.size() < limit) {
+			TreeSet<String> reportedResources = new TreeSet<>();
+			for (ResourceFile res : decompiler.getResources()) {
+				if (findings.size() >= limit) {
+					break;
+				}
+				ResourceType type = res.getType();
+				if (type != ResourceType.XML) {
+					continue;
+				}
+				String name = res.getOriginalName();
+				// FileProvider path configs live in res/xml/*paths*.xml; also scan any XML mentioning a
+				// path element to catch renamed configs. Dedup by resource name.
+				if (reportedResources.contains(name)) {
+					continue;
+				}
+				String text;
+				try {
+					var container = res.loadContent();
+					if (container == null) {
+						continue;
+					}
+					var codeInfo = container.getText();
+					if (codeInfo == null) {
+						continue;
+					}
+					text = codeInfo.toString();
+				} catch (Exception e) {
+					continue;
+				}
+				if (!BROAD_FILE_PATH.matcher(text).find()) {
+					continue;
+				}
+				reportedResources.add(name);
+				findings.add(finding("file_provider_misconfig", "high", name, 0,
+						"FileProvider path XML declares an overly-broad path (root-path / external-path "
+								+ "with path=\"/\" or \"\") or grant-all-permissions — combined with "
+								+ "FLAG_GRANT_READ_URI_PERMISSION any URI holder reads the entire filesystem "
+								+ "root or external storage (CWE-22/CWE-732); scope paths to a specific subdir"));
+				highSeverityCount++;
 			}
 		}
 

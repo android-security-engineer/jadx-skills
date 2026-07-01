@@ -381,7 +381,7 @@ public class McpToolDefinitions {
 				optArg("limit", "integer", "Maximum number of findings", 200)));
 
 		tools.add(tool("jadx_insecure_file_io_scan",
-				"Detect insecure file I/O (MASVS MSTG-STORAGE): MODE_WORLD_READABLE/WRITABLE, sensitive data written unencrypted (password/token/key to file), temp file race conditions, FileProvider misconfiguration, internal file I/O inventory. Distinct from storage-scan and data-residue-scan",
+				"Detect insecure file I/O (MASVS MSTG-STORAGE): MODE_WORLD_READABLE/WRITABLE, sensitive data written unencrypted (password/token/key to file), temp file race conditions, FileProvider misconfiguration (incl. overly-broad path XML: root-path / external-path path=\"/\" / grant-all-permissions, CWE-22/CWE-732), internal file I/O inventory. Scans code + res/xml path configs. Distinct from storage-scan and data-residue-scan",
 				optArg("package", "string", "Only scan classes under this package prefix", null),
 				optArg("limit", "integer", "Maximum number of findings", 200)));
 
