@@ -1096,6 +1096,14 @@ class CommandsTest {
 	}
 
 	@Test
+	void testCordovaAnalysisCommand() {
+		String output = runCommand("cordova-analysis", testDex.getAbsolutePath());
+		assertNotNull(output);
+		assertTrue(output.contains("\"success\": true"), "Should succeed: " + output);
+		assertTrue(output.contains("\"isCordova\""), "Should contain isCordova: " + output);
+	}
+
+	@Test
 	void testDotnetAnalysisCommand() {
 		String output = runCommand("dotnet-analysis", testDex.getAbsolutePath());
 		assertNotNull(output);

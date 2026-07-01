@@ -552,6 +552,10 @@ public class McpToolDefinitions {
 		tools.add(tool("jadx_dotnet_analysis",
 				"Analyze a Xamarin/.NET (MAUI) APK: enumerate managed assemblies, detect XALZ/LZ4 compression and AssemblyStore blob from assembly bytes, and report runtime flavor (classic Mono vs .NET 5+/MAUI)",
 				optArg("limit", "integer", "Maximum assemblies to list", 500)));
+		tools.add(tool("jadx_cordova_analysis",
+				"Analyze a Cordova/Ionic/Capacitor hybrid app: config.xml network/navigation whitelist wildcards, page CSP, plugins, and secrets/URLs in assets/www JS that Java-only scanners miss",
+				optArg("min_entropy", "number", "Min Shannon entropy for generic secret detection in www JS", 4.0),
+				optArg("limit", "integer", "Maximum secrets/URLs to return", 200)));
 		tools.add(tool("jadx_source_quality_report",
 				"Evaluate decompiled code quality: error markers, stubs, obfuscation indicators, catch-all handlers",
 				optArg("package", "string", "Only scan classes under this package prefix", null),

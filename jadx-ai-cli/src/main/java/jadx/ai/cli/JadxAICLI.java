@@ -103,6 +103,7 @@ import jadx.ai.cli.commands.Il2cppMetadataScanCommand;
 import jadx.ai.cli.commands.FlutterAnalysisCommand;
 import jadx.ai.cli.commands.ReactNativeAnalysisCommand;
 import jadx.ai.cli.commands.DotnetAnalysisCommand;
+import jadx.ai.cli.commands.CordovaAnalysisCommand;
 import jadx.ai.cli.commands.SourceQualityReportCommand;
 import jadx.ai.cli.commands.ClassInventoryCommand;
 import jadx.ai.cli.commands.EntrypointScanCommand;
@@ -236,6 +237,7 @@ import jadx.ai.cli.commands.UsageCommand;
 					FlutterAnalysisCommand.class,
 					ReactNativeAnalysisCommand.class,
 					DotnetAnalysisCommand.class,
+					CordovaAnalysisCommand.class,
 					SourceQualityReportCommand.class,
 					ClassInventoryCommand.class,
 					EntrypointScanCommand.class,
