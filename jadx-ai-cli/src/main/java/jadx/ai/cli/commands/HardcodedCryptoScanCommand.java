@@ -83,8 +83,15 @@ public class HardcodedCryptoScanCommand extends AbstractCommand {
 					+ "SECRET_KEY\\s*=\\s*\"[^\"]+\"|"
 					+ "ENCRYPTION_KEY\\s*=\\s*\"[^\"]+\"|"
 					+ "aesKey\\s*=\\s*\"[^\"]+\"");
-	private static final Pattern HARDCODED_KEY_BYTES = Pattern.compile(
-			"byte\\[\\]\\s*\\{\\s*0x[0-9a-fA-F]|"
+	/**
+	 * Hardcoded key material as a byte-array literal or base64 string. Covers the {@code new byte[]{0x..}}
+	 * hex-literal form AND the jadx-specific {@code new byte[]{(byte)0x12, (byte)0x34}} cast form — jadx
+	 * decompiles {@code byte} literals with an explicit {@code (byte)} cast because Java byte literals
+	 * overflow signed-byte range, so the bare {@code 0x} arm alone missed the most common decompiled
+	 * key-array shape. Package-private for testing.
+	 */
+	static final Pattern HARDCODED_KEY_BYTES = Pattern.compile(
+			"byte\\[\\]\\s*\\{\\s*(?:0x[0-9a-fA-F]|\\(byte\\)\\s*0x[0-9a-fA-F])|"
 					+ "\"[A-Za-z0-9+/]{20,}={0,2}\"\\s*.*SecretKeySpec|"
 					+ "keyBytes\\s*=\\s*\"[^\"]+\"|"
 					+ "KEY_BYTES\\s*=\\s*(new\\s+byte|\"[^\"]+\")");
@@ -93,10 +100,16 @@ public class HardcodedCryptoScanCommand extends AbstractCommand {
 					+ "nonce\\s*=\\s*\"[^\"]{6,}\"|"
 					+ "GCM_NONCE\\s*=\\s*\"[^\"]+\"|"
 					+ "fixedNonce|constantNonce");
-	private static final Pattern HARDCODED_SEED = Pattern.compile(
+	/**
+	 * Hardcoded SecureRandom seed. Covers {@code setSeed("...")}/{@code setSeed(new byte[...])}/
+	 * {@code setSeed(123L)} AND the no-suffix {@code setSeed(123)} form — jadx frequently emits the
+	 * long literal without the {@code L} suffix, so the {@code [0-9]+L} arm alone missed it. The bare
+	 * numeric arm requires the digit to be followed by {@code ;} or {@code )} so a variable-backed
+	 * {@code setSeed(seed.length)} does not fire. Package-private for testing.
+	 */
+	static final Pattern HARDCODED_SEED = Pattern.compile(
 			"SecureRandom\\s*\\(\\s*\"[^\"]+\"|"
-					+ "setSeed\\s*\\(\\s*(new\\s+byte\\[|\"[^\"]+\"|[0-9]+L)|"
-					+ "secureRandom\\.setSeed\\s*\\(|"
+					+ "setSeed\\s*\\(\\s*(new\\s+byte\\[|\"[^\"]+\"|[0-9]+L|[0-9]+\\s*[;)])|"
 					+ "SEED\\s*=\\s*(new\\s+byte|\"[^\"]+\"|[0-9]+L)");
 
 	private static final class Rule {
