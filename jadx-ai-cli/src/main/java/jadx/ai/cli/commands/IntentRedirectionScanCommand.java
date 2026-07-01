@@ -22,8 +22,8 @@ import jadx.api.JavaClass;
  * {@code manifest-audit} (static exported flags). The redirection pattern is a <em>data flow</em>:
  * the app pulls a nested {@code Intent} out of an <b>incoming, attacker-controllable</b> Intent
  * ({@code getParcelableExtra(...)} / {@code getParcelable(...)} / {@code Intent.parseUri(...)}) and
- * then launches it ({@code startActivity}/{@code startService}/{@code sendBroadcast}/{@code bindService}/
- * {@code setResult}). A malicious app can hand the victim an Intent aimed at the victim's own
+ * then launches it ({@code startActivity}/{@code startService}/{@code sendBroadcast}/
+ * {@code sendStickyBroadcast}/{@code bindService}/{@code setResult}). A malicious app can hand the victim an Intent aimed at the victim's own
  * <em>non-exported</em> components — the victim becomes a confused deputy that proxies the access.
  *
  * <p>Heuristic (class-scoped): a class that both extracts a nested Intent ({@code classHasSource}) and
@@ -41,7 +41,7 @@ import jadx.api.JavaClass;
  * redirectionClasses, usesIntentParseUri, truncated}}.
  */
 @Command(name = "intent-redirection-scan",
-		description = "Detect Intent redirection / confused-deputy (CWE-927, Google Play-flagged): a nested Intent extracted from an incoming Intent (getParcelableExtra / getParcelable / getParcelableArrayExtra / getParcelableArrayListExtra / Intent.parseUri) is then launched (startActivity/startService/sendBroadcast/bindService/setResult), proxying access to non-exported components. Not covered by intent-scan")
+		description = "Detect Intent redirection / confused-deputy (CWE-927, Google Play-flagged): a nested Intent extracted from an incoming Intent (getParcelableExtra / getParcelable / getParcelableArrayExtra / getParcelableArrayListExtra / Intent.parseUri) is then launched (startActivity/startService/sendBroadcast/sendStickyBroadcast/bindService/setResult), proxying access to non-exported components. Not covered by intent-scan")
 public class IntentRedirectionScanCommand extends AbstractCommand {
 
 	@Option(names = { "-p", "--package" }, description = "Only scan classes under this package prefix")
@@ -65,10 +65,16 @@ public class IntentRedirectionScanCommand extends AbstractCommand {
 			"getParcelableExtra\\s*\\(|getParcelable\\s*\\(|getParcelableArrayExtra\\s*\\(|"
 					+ "getParcelableArrayListExtra\\s*\\(|IntentCompat\\.getParcelableExtra|Intent\\.parseUri\\s*\\(");
 
-	/** Launching with an Intent — the redirection sink. */
-	private static final Pattern LAUNCH_SINK = Pattern.compile(
+	/**
+	 * Launching with an Intent — the redirection sink. Includes the sticky-broadcast variants
+	 * ({@code sendStickyBroadcast}/{@code sendStickyOrderedBroadcast}) — a sticky broadcast of an
+	 * extracted nested Intent proxies access just as a plain broadcast does, and the old sink set
+	 * silently missed them. Package-private so a test can assert the sticky forms are sinks.
+	 */
+	static final Pattern LAUNCH_SINK = Pattern.compile(
 			"startActivity\\s*\\(|startActivityForResult\\s*\\(|startActivities\\s*\\(|startService\\s*\\(|"
-					+ "startForegroundService\\s*\\(|sendBroadcast\\s*\\(|sendOrderedBroadcast\\s*\\(|bindService\\s*\\(");
+					+ "startForegroundService\\s*\\(|sendBroadcast\\s*\\(|sendOrderedBroadcast\\s*\\(|"
+					+ "sendStickyBroadcast\\s*\\(|sendStickyOrderedBroadcast\\s*\\(|bindService\\s*\\(");
 
 	private static final Pattern PARSE_URI = Pattern.compile("Intent\\.parseUri\\s*\\(");
 	/** Two-arg setResult(int, Intent) returns an Intent to the caller; one-arg setResult(int) does not. */
