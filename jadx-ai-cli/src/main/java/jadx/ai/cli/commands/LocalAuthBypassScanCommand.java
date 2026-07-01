@@ -73,9 +73,18 @@ public class LocalAuthBypassScanCommand extends AbstractCommand {
 
 	/** BiometricPrompt callback patterns. */
 	private static final Pattern ON_AUTH_SUCCEEDED = Pattern.compile("onAuthenticationSucceeded");
-	private static final Pattern ON_AUTH_FAILED = Pattern.compile("onAuthenticationFailed");
+	static final Pattern ON_AUTH_FAILED = Pattern.compile("onAuthenticationFailed");
 	private static final Pattern USES_RESULT = Pattern.compile(
 			"result\\.|result\\)|CryptoObject|authenticationResult");
+
+	/**
+	 * A call that blocks access from a failed-auth callback — {@code finish()}/{@code return}/
+	 * {@code cancel()}/{@code disable()}/{@code System.exit}/{@code throw}. Its <b>absence</b> from an
+	 * {@code onAuthenticationFailed} body is the "failed callback does not block access" half of
+	 * {@code biometric_result_ignored}. Package-private for testing.
+	 */
+	static final Pattern BLOCKING_CALL = Pattern.compile(
+			"\\bfinish\\s*\\(|\\breturn\\b|\\bcancel\\s*\\(|\\bdisable\\s*\\(|System\\.exit\\s*\\(|\\bthrow\\s");
 
 	@Override
 	protected void applyArgs(Map<String, Object> args) {
@@ -108,6 +117,8 @@ public class LocalAuthBypassScanCommand extends AbstractCommand {
 			if (code == null || code.isEmpty() || !AUTH_MARKER.matcher(code).find()) {
 				continue;
 			}
+
+			boolean reportedFailedCallback = false;
 
 			// Scan for auth-related methods
 			String[] lines = code.split("\n", -1);
@@ -210,6 +221,33 @@ public class LocalAuthBypassScanCommand extends AbstractCommand {
 								"onAuthenticationSucceeded callback does not use the authentication result — "
 										+ "the biometric check may be cosmetic; verify the callback actually "
 										+ "enforces access based on the result"));
+					}
+				}
+
+				// onAuthenticationFailed that does not block access — the second half of
+				// biometric_result_ignored promised in the class javadoc. ON_AUTH_FAILED was defined but
+				// never wired in; a failed-auth callback that does not finish()/return/cancel lets the
+				// user past the biometric check. Scan the callback body (until the next method/closing
+				// brace) for a blocking call; fire if none is found.
+				if (!reportedFailedCallback && ON_AUTH_FAILED.matcher(line).find()) {
+					boolean blocks = false;
+					for (int j = i + 1; j < Math.min(i + 12, lines.length); j++) {
+						String bodyLine = lines[j];
+						if (BLOCKING_CALL.matcher(bodyLine).find()) {
+							blocks = true;
+							break;
+						}
+						// End of callback body — next callback method or closing brace at method scope.
+						if (bodyLine.contains("void onAuthentication") || bodyLine.trim().equals("}")) {
+							break;
+						}
+					}
+					if (!blocks) {
+						findings.add(finding("biometric_result_ignored", "medium", fullName, i + 1,
+								"onAuthenticationFailed callback does not block access (no finish()/return/"
+										+ "cancel()) — a failed biometric check does not stop the flow; "
+										+ "call finish() or deny the action in the failure callback"));
+						reportedFailedCallback = true;
 					}
 				}
 			}
