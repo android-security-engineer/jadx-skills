@@ -61,9 +61,24 @@ public class DynamicLoadingScanCommand extends AbstractCommand {
 
 	private static final Pattern INCLUDE_CODE = Pattern.compile("CONTEXT_INCLUDE_CODE");
 
-	/** Markers that the loaded artefact comes from an attacker-influenceable location. */
-	private static final Pattern EXTERNAL_SRC = Pattern.compile(
+	/**
+	 * Markers that the loaded artefact comes from an attacker-influenceable location. Matched at
+	 * <b>class scope</b> for the {@code external_dex_load}/{@code external_native_load} high finding: a
+	 * real loader reads the external path on one line and constructs the loader on another, so a
+	 * same-line loader ∧ EXTERNAL_SRC AND would degrade the high RCE signal to medium. Package-private
+	 * so a test can assert the cross-line fix.
+	 */
+	static final Pattern EXTERNAL_SRC = Pattern.compile(
 			"getExternalStorageDirectory|getExternalFilesDir|getExternalCacheDir|getExternalStoragePublicDirectory|/sdcard|https?://|download|getDownloadCacheDirectory|getContentResolver");
+
+	/**
+	 * True iff the line is a code-loader sink and the class takes its artefact from an
+	 * attacker-influenceable location — the cross-line external-source signal. Package-private for testing.
+	 */
+	static boolean externalLoadSignal(boolean classHasExternalSrc, String line) {
+		return classHasExternalSrc && line != null
+				&& (DEX_LOADER.matcher(line).find() || NATIVE_LOAD_PATH.matcher(line).find());
+	}
 
 	@Override
 	protected void applyArgs(Map<String, Object> args) {
@@ -97,6 +112,12 @@ public class DynamicLoadingScanCommand extends AbstractCommand {
 				continue;
 			}
 
+			// EXTERNAL_SRC is matched at CLASS scope: a real loader reads the external path on one line
+			// (File dex = new File(getExternalFilesDir(null), ...)) and constructs the loader on another
+			// (new DexClassLoader(dex.getPath(), ...)) — a same-line loader ∧ EXTERNAL_SRC AND would
+			// degrade the high RCE signal to medium for the common cross-line form.
+			boolean classHasExternalSrc = EXTERNAL_SRC.matcher(code).find();
+
 			String[] lines = code.split("\n", -1);
 			for (int i = 0; i < lines.length && findings.size() < limit; i++) {
 				String line = lines[i];
@@ -104,7 +125,8 @@ public class DynamicLoadingScanCommand extends AbstractCommand {
 
 				if (DEX_LOADER.matcher(line).find()) {
 					usesDynamicLoading = true;
-					if (EXTERNAL_SRC.matcher(line).find()) {
+					// External-source can be on this line OR anywhere in the class (cross-line form).
+					if (classHasExternalSrc || EXTERNAL_SRC.matcher(line).find()) {
 						findings.add(finding(fullName, ln, "external_dex_load", "high",
 								"Class loaded from an external/world-writable/network source — runtime RCE primitive; an attacker who controls that file controls execution"));
 						highSeverityCount++;
@@ -114,7 +136,7 @@ public class DynamicLoadingScanCommand extends AbstractCommand {
 					}
 				} else if (NATIVE_LOAD_PATH.matcher(line).find()) {
 					usesDynamicLoading = true;
-					boolean ext = EXTERNAL_SRC.matcher(line).find();
+					boolean ext = classHasExternalSrc || EXTERNAL_SRC.matcher(line).find();
 					findings.add(finding(fullName, ln, ext ? "external_native_load" : "native_load_path",
 							ext ? "high" : "medium",
 							ext
