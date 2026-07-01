@@ -64,13 +64,15 @@ public class LoggingScanCommand extends AbstractCommand {
 	 * {@code Build.getSerial()} (the API 26+ replacement for the deprecated {@code Build.SERIAL}
 	 * field) — both are persistent device identifiers that {@code insecure-api-scan} also flags.
 	 * {@code Build\.getSerial} is not matched by any pre-existing term here, so a
-	 * {@code Log.d(TAG, Build.getSerial())} line was silently missed. Package-private so a test can
-	 * assert the modern API form is not missed.
+	 * {@code Log.d(TAG, Build.getSerial())} line was silently missed. {@code getMeid()} (CDMA twin of
+	 * {@code getImei()}) and {@code getIccSerialNumber()} (synonym of {@code getSimSerialNumber()}) are
+	 * the same hardware-identifier class and were likewise missing. Package-private so a test can
+	 * assert the modern API forms are not missed.
 	 */
 	static final String PII_GETTER_REGEX =
-			"getDeviceId\\s*\\(|getImei\\s*\\(|getSubscriberId\\s*\\(|getSimSerialNumber\\s*\\(|"
-					+ "getMacAddress\\s*\\(|getAndroidId\\s*\\(|getLine1Number\\s*\\(|"
-					+ "Build\\.getSerial\\s*\\(|Build\\.SERIAL";
+			"getDeviceId\\s*\\(|getImei\\s*\\(|getMeid\\s*\\(|getSubscriberId\\s*\\(|"
+					+ "getSimSerialNumber\\s*\\(|getIccSerialNumber\\s*\\(|getMacAddress\\s*\\(|"
+					+ "getAndroidId\\s*\\(|getLine1Number\\s*\\(|Build\\.getSerial\\s*\\(|Build\\.SERIAL";
 
 	private static final Pattern PII_GETTER = Pattern.compile(PII_GETTER_REGEX);
 

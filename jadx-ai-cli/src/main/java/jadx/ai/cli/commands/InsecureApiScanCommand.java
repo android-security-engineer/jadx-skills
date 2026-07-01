@@ -57,17 +57,23 @@ public class InsecureApiScanCommand extends AbstractCommand {
 			"setComponentEnabledSetting|Settings\\.Secure|Settings\\.Global|DevicePolicyManager|"
 					+ "UsageStatsManager|dismissKeyguard|KeyguardManager|PackageInstaller|"
 					+ "ACTION_INSTALL_PACKAGE|Build\\.SERIAL|Build\\.getSerial|ANDROID_ID|getDeviceId|"
-					+ "getSubscriberId|getSimSerialNumber");
+					+ "getSubscriberId|getSimSerialNumber|getMeid|getIccSerialNumber|MediaDrm|"
+					+ "getWidevineDeviceId|getPropertyMediaDrm");
 
 	/**
 	 * Persistent device-identifier APIs — {@code Build.SERIAL} (the deprecated field) AND its API 26+
 	 * replacement {@code Build.getSerial()} (modern code calls the method; the field was deprecated in
 	 * API 26). Both are abused for device fingerprinting (CWE-1039); Google Play restricts them.
-	 * Package-private so a test can assert the modern method form is not missed.
+	 * {@code getMeid()} (CDMA twin of {@code getImei()}) and {@code getIccSerialNumber()} (synonym of
+	 * {@code getSimSerialNumber()}) are the same hardware-identifier class and were missing.
+	 * {@code MediaDrm} Widevine device-unique IDs are a well-known fingerprinting fallback used to
+	 * evade the ANDROID_ID/Serial restrictions. Package-private so a test can assert coverage.
 	 */
 	static final String DEVICE_ID_REGEX =
-			"Build\\.SERIAL|Build\\.getSerial\\s*\\(|getDeviceId\\s*\\(|getSubscriberId|getSimSerialNumber|"
-					+ "Settings\\.Secure\\.getString.*android_id|ANDROID_ID";
+			"Build\\.SERIAL|Build\\.getSerial\\s*\\(|getDeviceId\\s*\\(|getImei\\s*\\(|getMeid\\s*\\(|"
+					+ "getSubscriberId|getSimSerialNumber|getIccSerialNumber|"
+					+ "Settings\\.Secure\\.getString.*android_id|ANDROID_ID|"
+					+ "getWidevineDeviceId|getPropertyMediaDrm";
 
 	private static final class Rule {
 		final Pattern pattern;
@@ -102,8 +108,10 @@ public class InsecureApiScanCommand extends AbstractCommand {
 						+ "MDM/parental control app, not ransomware"),
 		new Rule(DEVICE_ID_REGEX, "device_identifier", "medium",
 				"Persistent device identifier (Build.SERIAL / Build.getSerial() / ANDROID_ID / getDeviceId / "
-						+ "getSubscriberId / getSimSerialNumber) — enables device fingerprinting; "
-						+ "Google Play restricts these APIs; prefer instance IDs or advertising ID"),
+						+ "getImei / getMeid / getSubscriberId / getSimSerialNumber / getIccSerialNumber / "
+						+ "MediaDrm Widevine device ID) — enables device fingerprinting; Google Play restricts "
+						+ "these APIs; MediaDrm is a common fallback to evade the restrictions; prefer instance "
+						+ "IDs or advertising ID"),
 		new Rule("Settings\\.Secure|Settings\\.Global", "settings_secure_read", "info",
 				"Settings.Secure / Settings.Global read — accesses device settings; verify "
 						+ "the app does not read sensitive settings (ADB_ENABLED, "

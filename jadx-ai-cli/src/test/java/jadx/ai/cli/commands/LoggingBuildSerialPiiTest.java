@@ -48,6 +48,16 @@ class LoggingBuildSerialPiiTest {
 	}
 
 	@Test
+	void getMeidAndIccSerialNumberNowMatch() {
+		// getMeid() is the CDMA twin of getImei(); getIccSerialNumber() is a synonym of
+		// getSimSerialNumber(). Both are the same hardware-identifier class and were missing.
+		assertTrue(piiOn("Log.d(TAG, telephonyManager.getMeid());"),
+				"logging getMeid() is PII — must match");
+		assertTrue(piiOn("Log.d(TAG, telephonyManager.getIccSerialNumber());"),
+				"logging getIccSerialNumber() is PII — must match");
+	}
+
+	@Test
 	void androidIdGetterStillMatches() {
 		assertTrue(piiOn("Log.d(TAG, getAndroidId());"));
 	}
