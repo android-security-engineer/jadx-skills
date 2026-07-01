@@ -489,6 +489,10 @@ public final class CommandDispatch {
 		if (path != null) {
 			cmd.scriptFile = new File(path);
 		}
+		String engine = (String) args.get("engine");
+		if (engine != null) {
+			cmd.engineName = engine;
+		}
 		return cmd.execute(decompiler);
 	}
 

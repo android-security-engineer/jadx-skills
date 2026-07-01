@@ -79,6 +79,20 @@ public class McpToolDefinitions {
 				optArg("cfgType", "string", "CFG type: basic, raw, region", "basic"),
 				optArg("format", "string", "Serialization: dot, text", "dot")));
 
+		tools.add(tool("jadx_signature",
+				"Verify the APK signing scheme (v1/v2/v3/v3.1 via apksig) and list signer certificate details, digests, and any verification errors/warnings"));
+
+		tools.add(tool("jadx_reload",
+				"Reload/recompile/unload class code in the live decompiler (invalidates cached decompiled output — use after rename to refresh a class)",
+				optArg("class", "string", "Class full name to reload/unload (omit with all=true)", null),
+				optArg("type", "string", "Action: reload, recompile, unload", "reload"),
+				optArg("all", "boolean", "Apply the action to all classes", false)));
+
+		tools.add(tool("jadx_script",
+				"Run a JADX script against the loaded decompiler instance for custom scripted analysis/transformations",
+				arg("script", "string", "Path to the script file to execute", null),
+				optArg("engine", "string", "Script engine: js", "js")));
+
 		tools.add(tool("jadx_hook",
 				"Generate Frida or Xposed hook snippets for reverse engineering",
 				arg("class", "string", "Target class name (full name)", null),
