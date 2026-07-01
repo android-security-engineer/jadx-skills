@@ -40,7 +40,8 @@ import jadx.api.JavaClass;
  *       or GCMParameterSpec — defaults to ECB for block ciphers</li>
  *   <li>{@code md5_for_security} — MD5 used for password hashing or
  *       integrity verification — collision-vulnerable, use SHA-256+</li>
- *   <li>{@code sha1_for_security} — SHA-1 used for security — collision-
+ *   <li>{@code sha1_for_security} — SHA-1 used for security (MessageDigest, or as the
+ *       PBKDF2 PRF via {@code SecretKeyFactory.getInstance("PBKDF2WithHmacSHA1")}) — collision-
  *       vulnerable since SHAttered, use SHA-256+</li>
  *   <li>{@code weak_key_size} — Key sizes below recommended minimums
  *       (AES-128 borderline, RSA-1024, DES 56-bit) — vulnerable to
@@ -81,11 +82,20 @@ public class CryptographicMisuseScanCommand extends AbstractCommand {
 			"MessageDigest\\.getInstance\\s*\\(\\s*\"MD5\"|"
 					+ "\"MD5\"\\s*.*MessageDigest|MD5\\s*.*password|"
 					+ "MD5\\s*.*hash|MD5\\s*.*verify|MD5\\s*.*check");
-	private static final Pattern SHA1_SECURITY = Pattern.compile(
+	/**
+	 * SHA-1 used for a security purpose. Covers {@code MessageDigest.getInstance("SHA-1"/"SHA1")} and
+	 * the SHA-1-as-PRF key-derivation form {@code SecretKeyFactory.getInstance("PBKDF2WithHmacSHA1")}
+	 * — a KDF whose pseudorandom function is SHA-1, which neither {@code crypto-scan}'s
+	 * {@code MessageDigest}/{@code Mac} detection nor the bare {@code MessageDigest.getInstance} arm
+	 * here caught. Package-private so a test can assert the PBKDF2 form fires.
+	 */
+	static final Pattern SHA1_SECURITY = Pattern.compile(
 			"MessageDigest\\.getInstance\\s*\\(\\s*\"SHA-1\"|"
 					+ "MessageDigest\\.getInstance\\s*\\(\\s*\"SHA1\"|"
 					+ "\"SHA-1\"\\s*.*MessageDigest|SHA1\\s*.*password|"
-					+ "SHA-1\\s*.*signature|SHA1\\s*.*verify");
+					+ "SHA-1\\s*.*signature|SHA1\\s*.*verify|"
+					+ "SecretKeyFactory\\.getInstance\\s*\\(\\s*\"PBKDF2WithHmacSHA1\"|"
+					+ "\"PBKDF2WithHmacSHA1\"");
 	/**
 	 * Weak key sizes — below recommended minimums. Covers the legacy {@code keySize=} assignment AND
 	 * the API 23+ AndroidKeyStore standard {@code KeyGenParameterSpec.Builder.setKeySize(int)} setter:
