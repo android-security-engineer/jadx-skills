@@ -1240,6 +1240,14 @@ class CommandsTest {
 	}
 
 	@Test
+	void testCfgCommand() {
+		String output = runCommand("cfg", "-c", "HelloWorld", "-m", "main", testDex.getAbsolutePath());
+		assertNotNull(output);
+		assertTrue(output.contains("\"success\": true"), "Should succeed: " + output);
+		assertTrue(output.contains("\"cfgType\""), "Should contain cfgType: " + output);
+	}
+
+	@Test
 	void testFindClassesCommand() {
 		String output = runCommand("find-classes", "--by", "super", "-q", "Object", testDex.getAbsolutePath());
 		assertNotNull(output);

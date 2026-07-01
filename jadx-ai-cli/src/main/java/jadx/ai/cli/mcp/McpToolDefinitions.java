@@ -72,6 +72,13 @@ public class McpToolDefinitions {
 				optArg("depth", "integer", "Max traversal depth", 3),
 				optArg("format", "string", "Output format: json, mermaid, dot", "json")));
 
+		tools.add(tool("jadx_cfg",
+				"Generate the control flow graph of a single method (basic blocks, edges, dominators)",
+				arg("class", "string", "Target class full name", null),
+				arg("method", "string", "Target method name", null),
+				optArg("cfgType", "string", "CFG type: basic, raw, region", "basic"),
+				optArg("format", "string", "Serialization: dot, text", "dot")));
+
 		tools.add(tool("jadx_hook",
 				"Generate Frida or Xposed hook snippets for reverse engineering",
 				arg("class", "string", "Target class name (full name)", null),
