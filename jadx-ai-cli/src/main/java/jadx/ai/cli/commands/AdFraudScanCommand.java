@@ -53,10 +53,19 @@ public class AdFraudScanCommand extends AbstractCommand {
 	@Option(names = { "--limit" }, description = "Maximum number of findings", defaultValue = "200")
 	protected int limit = 200;
 
-	/** Gate: only scan classes with ad-related markers. */
-	private static final Pattern AD_MARKER = Pattern.compile(
+	/**
+	 * Gate: only scan classes with ad-related markers. Kept in sync with the RULES set — every rule's
+	 * anchor must appear here or a class exercising only that rule is skipped at the gate and the
+	 * finding is silently dropped. The {@code click_fraud} rule's custom-named anchors
+	 * ({@code simulateAdClick}/{@code adClickUrl}/{@code AdClickHandler}/{@code autoClickAd}/
+	 * {@code adClickRedirect}) are deliberately-named helper methods/fields with NO Ad SDK type
+	 * reference, so a dedicated fraud-helper class was skipped and {@code click_fraud} never fired.
+	 * Package-private so a test can assert the gate covers every rule anchor.
+	 */
+	static final Pattern AD_MARKER = Pattern.compile(
 			"AdView|AdRequest|AdMob|InterstitialAd|RewardedAd|adView|AdListener|"
 					+ "AdvertisingIdClient|advertisingId|performClick|clickAd|"
+					+ "simulateAdClick|adClickUrl|AdClickHandler|autoClickAd|adClickRedirect|"
 					+ "AppsFlyerLib|AdjustConfig|Branch|Kochava|Singular|Tune|Matomy|"
 					+ "FacebookAd|FBAudienceNetwork|UnityAds|AppLovin|IronSource|"
 					+ "Vungle|Chartboost|StartApp|InMobi|onRewardedAdCompleted|"

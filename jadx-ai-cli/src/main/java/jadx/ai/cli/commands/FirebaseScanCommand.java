@@ -62,10 +62,19 @@ public class FirebaseScanCommand extends AbstractCommand {
 		}
 	}
 
-	/** Broad gate: only line-scan a class/resource whose text mentions Firebase/Google backends. */
-	private static final Pattern FIREBASE_MARKER = Pattern.compile(
+	/**
+	 * Broad gate: only line-scan a class/resource whose text mentions Firebase/Google backends. Kept in
+	 * sync with {@link #RULES} — every rule's anchor must appear here or a class exercising only that
+	 * rule is skipped at the gate and the finding is silently dropped. The mobilesdk app id
+	 * ({@code 1:NN:android:HH}, the {@code firebase_app_id} rule) is a bare string constant that can
+	 * appear with NO {@code Firebase}/{@code AIza}/{@code firebaseio} reference — e.g. a build-config
+	 * or analytics helper holding only the project id — so a pure app-id class was skipped and
+	 * {@code firebase_app_id} never fired. Package-private so a test can assert the gate covers it.
+	 */
+	static final Pattern FIREBASE_MARKER = Pattern.compile(
 			"firebaseio\\.com|firebasedatabase\\.app|appspot\\.com|firebasestorage|AIza|"
-					+ "Firebase|gcm_defaultSenderId|google_app_id|firebase_database_url|gs://");
+					+ "Firebase|gcm_defaultSenderId|google_app_id|firebase_database_url|gs://|"
+					+ "\\d:\\d{6,}:android:[0-9a-fA-F]+");
 
 	/** First matching rule wins per line; group(1) (when present) is the value to inventory. */
 	private static final List<Rule> RULES = List.of(

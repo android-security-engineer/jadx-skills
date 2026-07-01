@@ -55,10 +55,17 @@ public class DataResidueScanCommand extends AbstractCommand {
 	@Option(names = { "--limit" }, description = "Maximum number of findings", defaultValue = "200")
 	protected int limit = 200;
 
-	/** Gate: only scan classes with data-residue markers. */
-	private static final Pattern RESIDUE_MARKER = Pattern.compile(
+	/**
+	 * Gate: only scan classes with data-residue markers. Kept in sync with the RULES set — every rule's
+	 * anchor must appear here or a class exercising only that rule is skipped at the gate and the
+	 * finding is silently dropped. {@code /storage/emulated/0/} (the {@code sdcard_direct} rule) is the
+	 * modern default external-storage path and can appear hard-coded in a class with NO
+	 * {@code getExternalStorage*}/{@code Environment} call — so a pure path-literal class was skipped
+	 * and {@code sdcard_direct} never fired. Package-private so a test can assert the gate covers it.
+	 */
+	static final Pattern RESIDUE_MARKER = Pattern.compile(
 			"getExternalStorage|getExternalFilesDir|getExternalCacheDir|"
-					+ "/sdcard/|/mnt/sdcard|Environment\\.getExternal|"
+					+ "/sdcard/|/mnt/sdcard|/storage/emulated|Environment\\.getExternal|"
 					+ "AccountManager|addAccountExplicitly|"
 					+ "ClipboardManager|setPrimaryClip|"
 					+ "ContentProvider|insert|update|delete|"
