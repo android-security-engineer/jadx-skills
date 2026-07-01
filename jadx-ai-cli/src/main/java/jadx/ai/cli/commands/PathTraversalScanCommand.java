@@ -60,16 +60,27 @@ public class PathTraversalScanCommand extends AbstractCommand {
 	private static final Pattern ENTRY_NAME = Pattern.compile("\\.getName\\s*\\(");
 
 	/** A canonicalisation / prefix guard anywhere in the class suppresses the high findings. */
-	private static final Pattern CANONICAL_GUARD = Pattern.compile(
+	static final Pattern CANONICAL_GUARD = Pattern.compile(
 			"getCanonicalPath\\s*\\(|getCanonicalFile\\s*\\(|toRealPath\\s*\\(|normalize\\s*\\(\\s*\\)|\\.startsWith\\s*\\(");
 
 	/** File-system sinks that consume a path/name. */
 	private static final Pattern FILE_SINK = Pattern.compile(
 			"new\\s+File\\s*\\(|new\\s+FileInputStream\\s*\\(|new\\s+FileOutputStream\\s*\\(|new\\s+RandomAccessFile\\s*\\(|openFileOutput\\s*\\(|new\\s+FileReader\\s*\\(|new\\s+FileWriter\\s*\\(");
 
-	/** Attacker-controllable sources of a path/name. */
-	private static final Pattern UNTRUSTED = Pattern.compile(
+	/** Attacker-controllable sources of a path/name — matched at CLASS scope for path_traversal: a real
+	 * handler reads the untrusted input (getStringExtra/getQueryParameter/Uri.parse/...) on one line
+	 * and opens the File on another, so a same-line sink∧source AND would miss the common form.
+	 * Package-private so a test can assert the cross-line fix. */
+	static final Pattern UNTRUSTED = Pattern.compile(
 			"getStringExtra\\s*\\(|getQueryParameter\\s*\\(|getParameter\\s*\\(|getIntent\\s*\\(\\s*\\)|getData\\s*\\(\\s*\\)|getExtras\\s*\\(|getHeader\\s*\\(|Uri\\.parse\\s*\\(|getLastPathSegment\\s*\\(|getPath\\s*\\(\\s*\\)|getInputStream\\s*\\(");
+
+	/**
+	 * True iff the line is a file sink and the class takes an attacker-controlled path with no
+	 * canonical guard — the cross-line path_traversal signal. Package-private for testing.
+	 */
+	static boolean untrustedPathSignal(boolean classHasUntrusted, boolean classGuardsPath, String line) {
+		return classHasUntrusted && !classGuardsPath && line != null && FILE_SINK.matcher(line).find();
+	}
 
 	private static final Pattern TRAVERSAL_LITERAL = Pattern.compile("\"[^\"]*\\.\\./[^\"]*\"|\"\\.\\.\"");
 
@@ -107,6 +118,10 @@ public class PathTraversalScanCommand extends AbstractCommand {
 
 			boolean isZipCtx = ZIP_MARKER.matcher(code).find() && ENTRY_NAME.matcher(code).find();
 			boolean hasGuard = CANONICAL_GUARD.matcher(code).find();
+			// UNTRUSTED source is matched at CLASS scope: a real handler reads the input on one line and
+			// opens the File on another, so a same-line sink∧source AND would miss the common form.
+			boolean classHasUntrusted = UNTRUSTED.matcher(code).find();
+			boolean reportedPathTraversal = false;
 
 			String[] lines = code.split("\n", -1);
 			for (int i = 0; i < lines.length && findings.size() < limit; i++) {
@@ -123,11 +138,14 @@ public class PathTraversalScanCommand extends AbstractCommand {
 					continue;
 				}
 
-				// Untrusted path: a file sink fed (on the same line) by an attacker-controlled source.
-				if (sink && UNTRUSTED.matcher(line).find() && !hasGuard) {
+				// Untrusted path: a file sink in a class that takes attacker-controlled input, with no
+				// canonical guard. Class-scoped source covers both the same-line and the cross-line
+				// (String p = intent.getStringExtra(...); new File(p)) forms.
+				if (!reportedPathTraversal && untrustedPathSignal(classHasUntrusted, hasGuard, line)) {
 					findings.add(finding(fullName, ln, "path_traversal", "high",
 							"File path derived from untrusted input (intent extra / query param / Uri) without canonicalisation — attacker can traverse with ../"));
 					highSeverityCount++;
+					reportedPathTraversal = true;
 					continue;
 				}
 
