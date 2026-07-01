@@ -33,7 +33,10 @@ import jadx.api.JavaClass;
  *       provider — IPC-reachable SQL injection.</li>
  *   <li><b>provider_path_traversal</b> (high) — {@code openFile/openAssetFile} that derives a
  *       {@code File} from {@code uri.getPathSegments/getLastPathSegment/getPath} with no canonical
- *       guard — IPC-reachable arbitrary file read/write.</li>
+ *       guard — IPC-reachable arbitrary file read/write. The URI-source and the {@code new File}/
+ *       {@code ParcelFileDescriptor.open} sink are matched at <em>class</em> scope, because a real
+ *       openFile pulls the path segment on one line and builds the File on another; a same-line AND
+ *       would silently drop the finding on the common form.</li>
  *   <li><b>provider_world_grant</b> (medium) — {@code grantUriPermission} /
  *       {@code FLAG_GRANT_*_URI_PERMISSION} / {@code setGrantUriPermissions} widening access.</li>
  *   <li><b>provider_uri_trusted</b> (info) — reads {@code uri.getLastPathSegment}/etc. into a query;
@@ -64,13 +67,20 @@ public class ExportedProviderScanCommand extends AbstractCommand {
 	private static final Pattern SQL_SINK = Pattern.compile(
 			"\\.rawQuery\\s*\\(|\\.execSQL\\s*\\(|\\.query\\s*\\(|appendWhere\\s*\\(|setTables\\s*\\(|"
 					+ "\\.insert\\s*\\(|\\.update\\s*\\(|\\.delete\\s*\\(|compileStatement\\s*\\(");
-	private static final Pattern FILE_SINK = Pattern.compile(
+	/** File-construction / open sinks inside an openFile implementation. Package-private for testing. */
+	static final Pattern FILE_SINK = Pattern.compile(
 			"new\\s+File\\s*\\(|ParcelFileDescriptor\\.open|openFileHelper\\s*\\(");
 	private static final Pattern OPENFILE_CTX = Pattern.compile("openFile\\s*\\(|openAssetFile\\s*\\(");
-	private static final Pattern URI_SOURCE = Pattern.compile(
+	/**
+	 * Untrusted URI-derived path input. Matched at <em>class</em> scope for path-traversal (a real
+	 * openFile reads the path segment on one line and builds the File on another). Package-private for
+	 * testing.
+	 */
+	static final Pattern URI_SOURCE = Pattern.compile(
 			"uri\\.getPathSegments|getLastPathSegment|uri\\.getPath|getPathSegments\\s*\\(|"
 					+ "uri\\.getQueryParameter|ContentUris\\.parseId");
-	private static final Pattern CANONICAL_GUARD = Pattern.compile(
+	/** A canonical-path / normalize / prefix-bound guard that suppresses path traversal. Package-private for testing. */
+	static final Pattern CANONICAL_GUARD = Pattern.compile(
 			"getCanonicalPath|getCanonicalFile|toRealPath|normalize\\s*\\(|\\.startsWith\\s*\\(");
 	private static final Pattern GRANT = Pattern.compile(
 			"grantUriPermission\\s*\\(|FLAG_GRANT_(READ|WRITE)_URI_PERMISSION|setGrantUriPermissions");
@@ -112,8 +122,13 @@ public class ExportedProviderScanCommand extends AbstractCommand {
 			// path-traversal class (the class is validating its file paths).
 			boolean classGuardsPath = CANONICAL_GUARD.matcher(code).find();
 			boolean classHasOpenFile = OPENFILE_CTX.matcher(code).find();
+			// URI_SOURCE is matched at CLASS scope: a real openFile reads the path segment on one line
+			// and builds the File on another, so a same-line FILE_SINK ∧ URI_SOURCE AND would miss the
+			// common form. The FILE_SINK line stays the per-line anchor for lineNumber.
+			boolean classHasUriSource = URI_SOURCE.matcher(code).find();
 
 			String[] lines = code.split("\n", -1);
+			boolean reportedPathTraversal = false;
 			for (int i = 0; i < lines.length && findings.size() < limit; i++) {
 				String line = lines[i];
 				int ln = i + 1;
@@ -126,11 +141,12 @@ public class ExportedProviderScanCommand extends AbstractCommand {
 					highSeverityCount++;
 					continue;
 				}
-				if (classHasOpenFile && FILE_SINK.matcher(line).find()
-						&& URI_SOURCE.matcher(line).find() && !classGuardsPath) {
+				if (!reportedPathTraversal
+						&& providerPathTraversalSignal(classHasOpenFile, classHasUriSource, classGuardsPath, line)) {
 					findings.add(finding(fullName, ln, "provider_path_traversal", "high",
 							"openFile/openAssetFile maps a URI segment to a File with no canonical-path guard — IPC-reachable arbitrary file read/write via ../ in the content:// path. Canonicalise and confine to an allowed root"));
 					highSeverityCount++;
+					reportedPathTraversal = true;
 					continue;
 				}
 				if (GRANT.matcher(line).find()) {
@@ -152,6 +168,20 @@ public class ExportedProviderScanCommand extends AbstractCommand {
 		data.put("providerClasses", providerClasses);
 		data.put("truncated", findings.size() >= limit);
 		return JsonOutput.ok(data);
+	}
+
+	/**
+	 * True if {@code line} is the anchor for a provider path-traversal finding. The class-level facts
+	 * (openFile present, URI-derived input present somewhere in the class, no canonical guard) are
+	 * passed in; this method only checks the per-line File sink that gives the finding its lineNumber.
+	 *
+	 * <p>Package-private so a test can assert the cross-line fix: a class whose URI_SOURCE and FILE_SINK
+	 * are on different lines now fires (when guarded it does not).
+	 */
+	static boolean providerPathTraversalSignal(boolean classHasOpenFile, boolean classHasUriSource,
+			boolean classGuardsPath, String line) {
+		return classHasOpenFile && classHasUriSource && !classGuardsPath
+				&& line != null && FILE_SINK.matcher(line).find();
 	}
 
 	private static Map<String, Object> finding(String cls, int line, String kind, String severity, String detail) {
