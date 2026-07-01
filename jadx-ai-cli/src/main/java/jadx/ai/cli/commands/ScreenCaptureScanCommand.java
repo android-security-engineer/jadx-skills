@@ -57,9 +57,18 @@ public class ScreenCaptureScanCommand extends AbstractCommand {
 	private static final Pattern SCREEN_MARKER = Pattern.compile(
 			"FLAG_SECURE|MediaProjection|VirtualDisplay|createVirtualDisplay|Screenshot|PixelCopy|takeScreenshot|ScreenCapture");
 
-	private static final Pattern FLAG_SECURE_SET = Pattern.compile("FLAG_SECURE");
-	private static final Pattern FLAG_SECURE_ON_WINDOW = Pattern.compile(
+	/**
+	 * A real {@code FLAG_SECURE} application to a window — {@code setFlags(…, FLAG_SECURE)} or
+	 * {@code addFlags(FLAG_SECURE)}. This (NOT the bare {@code FLAG_SECURE} literal) is what proves the
+	 * defence is actually in effect; the bare literal also matches a comment or a {@code setFlags(0, …)}
+	 * mask-only call. Package-private so a test can assert the absent-finding uses the real form.
+	 */
+	static final Pattern FLAG_SECURE_ON_WINDOW = Pattern.compile(
 			"setFlags\\s*\\(.*FLAG_SECURE|addFlags\\s*\\(.*FLAG_SECURE|FLAG_SECURE.*setFlags|FLAG_SECURE.*addFlags");
+	/** An Activity-class marker — only Activity windows are candidates for FLAG_SECURE absence. */
+	static final Pattern ACTIVITY_MARKER = Pattern.compile(
+			"extends\\s+(Activity|AppCompatActivity|FragmentActivity|BaseActivity|ActionBarActivity)"
+					+ "|setContentView\\s*\\(");
 	private static final Pattern MEDIA_PROJECTION = Pattern.compile(
 			"MediaProjection|createVirtualDisplay|VirtualDisplay|MediaProjectionManager");
 	private static final Pattern SCREENSHOT_API = Pattern.compile(
@@ -100,7 +109,10 @@ public class ScreenCaptureScanCommand extends AbstractCommand {
 			}
 
 			// Class-level checks
-			boolean classHasFlagSecure = FLAG_SECURE_SET.matcher(code).find();
+			// hasFlagSecure uses the REAL setFlags/addFlags application, not the bare FLAG_SECURE literal —
+			// a comment or a mask-only setFlags(0, ...) mentioning FLAG_SECURE must NOT count as defended.
+			boolean classHasFlagSecure = FLAG_SECURE_ON_WINDOW.matcher(code).find();
+			boolean classIsActivity = ACTIVITY_MARKER.matcher(code).find();
 			boolean classHasMediaProjection = MEDIA_PROJECTION.matcher(code).find();
 			boolean classHasScreenshotApi = SCREENSHOT_API.matcher(code).find();
 
@@ -112,6 +124,18 @@ public class ScreenCaptureScanCommand extends AbstractCommand {
 			}
 			if (classHasScreenshotApi) {
 				hasScreenshotApi = true;
+			}
+
+			// FLAG_SECURE absent on an Activity — the documented high-severity finding that was promised
+			// in the class doc but never emitted. An Activity window without FLAG_SECURE is captured by
+			// screenshots / screen recordings; one per class.
+			if (classIsActivity && !classHasFlagSecure && findings.size() < limit) {
+				findings.add(finding("flag_secure_absent", "high", fullName, 0,
+						"Activity does not set FLAG_SECURE — its content is captured by screenshots and "
+								+ "screen recordings (MASVS MSTG-PLATFORM-4); add getWindow().setFlags("
+								+ "WindowManager.LayoutParams.FLAG_SECURE, FLAG_SECURE) for screens showing "
+								+ "sensitive data"));
+				highSeverityCount++;
 			}
 
 			// Per-line detection
