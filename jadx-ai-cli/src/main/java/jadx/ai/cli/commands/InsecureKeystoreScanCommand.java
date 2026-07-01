@@ -63,8 +63,24 @@ public class InsecureKeystoreScanCommand extends AbstractCommand {
 			"setUserAuthenticationRequired\\s*\\(\\s*false");
 	private static final Pattern SET_USER_AUTH_REQUIRED_TRUE = Pattern.compile(
 			"setUserAuthenticationRequired\\s*\\(\\s*true");
-	private static final Pattern SET_UNLOCKED_DEVICE_FALSE = Pattern.compile(
+	/** Explicitly disables the unlocked-device requirement — key material usable on a locked device. */
+	static final Pattern SET_UNLOCKED_DEVICE_FALSE = Pattern.compile(
 			"setUnlockedDeviceRequired\\s*\\(\\s*false");
+
+	/**
+	 * Key-import sink — a key materialised into the KeyStore via {@code setEntry}. Matched at
+	 * <b>class scope</b> for {@code key_not_bound_to_device}: the import and the (missing) protection
+	 * are independent statements, so a same-line AND would never fire. Package-private for testing.
+	 */
+	static final Pattern KEY_IMPORT = Pattern.compile(
+			"\\.setEntry\\s*\\(|KeyStore\\.setEntry");
+
+	/**
+	 * The protection that binds an imported key to secure hardware — its <b>absence</b> is the
+	 * {@code key_not_bound_to_device} signal. Package-private for testing.
+	 */
+	static final Pattern KEY_PROTECTION_GUARD = Pattern.compile(
+			"KeyProtection\\.Builder|setBoundToSpecificSecureHardware|importKey\\s*\\([^)]*KeyProtection");
 	private static final Pattern INSECURE_ALGO = Pattern.compile(
 			"AES/ECB|RSA/ECB/PKCS1Padding|DES|DESede|Blowfish|RC4|"
 					+ "KeyPairGenerator\\.getInstance\\s*\\(\\s*\"DSA\"|"
@@ -73,8 +89,6 @@ public class InsecureKeystoreScanCommand extends AbstractCommand {
 					+ "MessageDigest\\.getInstance\\s*\\(\\s*\"MD5|"
 					+ "MessageDigest\\.getInstance\\s*\\(\\s*\"SHA1|"
 					+ "Cipher\\.getInstance\\s*\\(\\s*\"AES/ECB");
-	private static final Pattern KEY_IMPORT_NO_PROTECTION = Pattern.compile(
-			"setEntry\\s*\\(|KeyStore\\.setEntry|KeyProtection\\.Builder");
 	private static final Pattern KEYSTORE_PASSWORD = Pattern.compile(
 			"KeyStore\\.getInstance|keystore\\.load\\s*\\(");
 	private static final Pattern HARDCODED_PASSWORD = Pattern.compile(
@@ -114,6 +128,7 @@ public class InsecureKeystoreScanCommand extends AbstractCommand {
 			boolean reportedNoAuth = false;
 			boolean reportedInsecureAlgo = false;
 			boolean reportedHardcodedPassword = false;
+			boolean reportedExtractable = false;
 
 			String[] lines = code.split("\n", -1);
 			for (int i = 0; i < lines.length && findings.size() < limit; i++) {
@@ -126,6 +141,16 @@ public class InsecureKeystoreScanCommand extends AbstractCommand {
 									+ "authentication (biometric/PIN); any app with keystore access can use this key"));
 					highSeverityCount++;
 					reportedNoAuth = true;
+					continue;
+				}
+
+				// Key explicitly usable on a locked device — extractable-without-unlock signal
+				if (!reportedExtractable && SET_UNLOCKED_DEVICE_FALSE.matcher(line).find()) {
+					findings.add(finding("key_extractable", "medium", fullName, i + 1,
+							"setUnlockedDeviceRequired(false) — key material can be used while the device "
+									+ "is locked; combine with setUserAuthenticationRequired(true) so the key "
+									+ "is only available after biometric/PIN unlock"));
+					reportedExtractable = true;
 					continue;
 				}
 
@@ -157,6 +182,18 @@ public class InsecureKeystoreScanCommand extends AbstractCommand {
 						"KeyGenParameterSpec used but setUserAuthenticationRequired() never called — "
 								+ "key defaults to not requiring user auth; add setUserAuthenticationRequired(true)"));
 				highSeverityCount++;
+			}
+
+			// Class-level: a key imported into the KeyStore (setEntry) without KeyProtection.Builder —
+			// the imported key is not bound to secure hardware and can be extracted. The import and the
+			// (missing) protection are independent statements, so this is a class-scope AND, not per-line.
+			if (findings.size() < limit
+					&& KEY_IMPORT.matcher(code).find()
+					&& !KEY_PROTECTION_GUARD.matcher(code).find()) {
+				findings.add(finding("key_not_bound_to_device", "medium", fullName, 0,
+						"Key imported into KeyStore via setEntry without KeyProtection.Builder — the key "
+								+ "is not bound to secure hardware and can be extracted; wrap imports in "
+								+ "KeyProtection.Builder().setBoundToSpecificSecureHardware(true)"));
 			}
 		}
 
