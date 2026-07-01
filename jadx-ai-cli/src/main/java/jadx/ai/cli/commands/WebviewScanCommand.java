@@ -25,8 +25,12 @@ import jadx.api.JavaClass;
  * <ul>
  *   <li>{@code setAllowUniversalAccessFromFileURLs(true)} / {@code setAllowFileAccessFromFileURLs(true)}
  *       — UXSS, cross-origin local-file reads (high)</li>
- *   <li>{@code setJavaScriptEnabled(true)} + {@code addJavascriptInterface(...)} — JS can call into Java
+ *   <li>{@code addJavascriptInterface(...)} — JS can call into Java
  *       (RCE pre-API17, still risky)</li>
+ *   <li>{@code addWebMessageListener(...)} / {@code WebMessageListener} — modern two-way JS bridge
+ *       (post-API-23 replacement for addJavascriptInterface); unverified origin → native method call</li>
+ *   <li>{@code setAcceptThirdPartyCookies(true)} / {@code setAcceptCookie(true)} +
+ *       {@code CookieManager.getCookie} — session-cookie exfiltration to web content (CWE-1004)</li>
  *   <li>{@code setAllowFileAccess(true)} / {@code setAllowContentAccess(true)} — file:// and content://
  *       reachable from web content</li>
  *   <li>{@code setMixedContentMode(MIXED_CONTENT_ALWAYS_ALLOW)} — https page may load http resources</li>
@@ -37,7 +41,7 @@ import jadx.api.JavaClass;
  * </ul>
  */
 @Command(name = "webview-scan",
-		description = "Scan code for dangerous WebView configuration (file-URL access, JS bridges, mixed content, debugging)")
+		description = "Scan code for dangerous WebView configuration (file-URL access, JS bridges incl. addWebMessageListener, third-party cookie theft, mixed content, debugging, SSL bypass)")
 public class WebviewScanCommand extends AbstractCommand {
 
 	@Option(names = { "-p", "--package" }, description = "Only scan classes under this package prefix")
@@ -46,6 +50,29 @@ public class WebviewScanCommand extends AbstractCommand {
 	@Option(names = { "--limit" }, description = "Maximum number of findings", defaultValue = "300")
 	protected int limit = 300;
 
+	/**
+	 * Modern two-way JS bridge — the post-API-23 replacement for {@code addJavascriptInterface}. Bypasses
+	 * the js_interface rule, so a WebView that migrated to WebMessageListener looked clean. Unverified
+	 * {@code allowedOriginRules}/{@code isOriginAllowed} lets any page call native methods. Package-private
+	 * for testing.
+	 */
+	static final Pattern WEB_MESSAGE_LISTENER = Pattern.compile(
+			"addWebMessageListener\\s*\\(|WebViewCompat\\.addWebMessageListener\\s*\\(|WebMessageListener|onPostMessage\\s*\\(\\s*WebMessage");
+
+	/**
+	 * WebView (third-party) cookie acceptance — combined with {@link #COOKIE_READ}, web content can
+	 * exfiltrate the host app's session cookies (account takeover, CWE-1004). The {@code true} arg may
+	 * follow the receiver ({@code setAcceptThirdPartyCookies(webView, true)}), so the sink is bounded by
+	 * {@code [^;]*?} up to {@code true} (not the next {@code ;}) — same widening as the SQL/exec dynamic-arg
+	 * rules. Package-private for testing.
+	 */
+	static final Pattern THIRD_PARTY_COOKIE = Pattern.compile(
+			"setAcceptThirdPartyCookies\\s*\\([^;]*?true|setAcceptCookie\\s*\\(\\s*true\\s*\\)");
+
+	/** Reads the WebView cookie jar; risky if exposed to untrusted web content. Package-private for testing. */
+	static final Pattern COOKIE_READ = Pattern.compile(
+			"CookieManager\\.getInstance\\s*\\(\\s*\\)\\s*\\.getCookie");
+
 	// Each rule: a single-line pattern, a kind, a severity, and a human detail.
 	private static final class Rule {
 		final Pattern pattern;
@@ -53,11 +80,15 @@ public class WebviewScanCommand extends AbstractCommand {
 		final String severity;
 		final String detail;
 
-		Rule(String regex, String kind, String severity, String detail) {
-			this.pattern = Pattern.compile(regex);
+		Rule(Pattern pattern, String kind, String severity, String detail) {
+			this.pattern = pattern;
 			this.kind = kind;
 			this.severity = severity;
 			this.detail = detail;
+		}
+
+		Rule(String regex, String kind, String severity, String detail) {
+			this(Pattern.compile(regex), kind, severity, detail);
 		}
 	}
 
@@ -72,6 +103,18 @@ public class WebviewScanCommand extends AbstractCommand {
 					"setAllowContentAccess(true) — WebView can load content:// URLs"),
 			new Rule("addJavascriptInterface\\s*\\(", "js_interface", "high",
 					"addJavascriptInterface(...) — exposes a Java object to JavaScript (RCE risk, esp. pre-API17)"),
+			new Rule(WEB_MESSAGE_LISTENER, "web_message_listener", "medium",
+					"WebMessageListener / addWebMessageListener — modern two-way JS bridge (the post-API-23 " +
+							"replacement for addJavascriptInterface); bypasses the js_interface rule. Verify " +
+							"allowedOriginRules / isOriginAllowed — an unverified origin lets any page call native methods"),
+			new Rule(THIRD_PARTY_COOKIE, "third_party_cookie", "high",
+					"setAcceptThirdPartyCookies(true) / setAcceptCookie(true) — WebView accepts (third-party) " +
+							"cookies; combined with CookieManager.getCookie a malicious/injected page can exfiltrate " +
+							"the host app's session cookies (incl. httpOnly http cookies) — account takeover (CWE-1004)"),
+			new Rule(COOKIE_READ, "cookie_read", "medium",
+					"CookieManager.getInstance().getCookie(...) — reads the WebView cookie jar; if cookies are " +
+							"exposed to untrusted web content (JS enabled, third-party cookies accepted) the session " +
+							"can be stolen. Review where the returned cookie string is sent"),
 			new Rule("setJavaScriptEnabled\\s*\\(\\s*true\\s*\\)", "javascript_enabled", "info",
 					"setJavaScriptEnabled(true) — JS execution enabled (risk multiplier for the findings above)"),
 			new Rule("MIXED_CONTENT_ALWAYS_ALLOW", "mixed_content", "high",
