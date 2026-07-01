@@ -25,7 +25,10 @@ import jadx.api.JavaClass;
  * {@code hook} and {@code frida} commands. Categories:
  * <ul>
  *   <li><b>root</b> — su binary paths, Magisk/SuperSU package names, RootBeer, test-keys.</li>
- *   <li><b>emulator</b> — goldfish/ranchu/qemu, generic Build.FINGERPRINT, Genymotion/VBox markers.</li>
+ *   <li><b>emulator</b> — goldfish/ranchu/qemu, concrete emulator fingerprint/model/hardware values
+ *       (generic_x86, google_sdk, vbox86p), Genymotion/VBox markers. A bare {@code Build.FINGERPRINT}
+ *       reference is deliberately NOT a marker — legit code (crash reporting, device fingerprinting,
+ *       risk control) reads the fingerprint too; only comparisons against known emulator values count.</li>
  *   <li><b>debugger</b> — {@code Debug.isDebuggerConnected}, {@code waitingForDebugger}, FLAG_DEBUGGABLE checks.</li>
  *   <li><b>frida_xposed</b> — frida/gum/27042 port, Xposed packages, {@code /proc/self/maps} scans.</li>
  *   <li><b>attestation</b> — SafetyNet / Play Integrity remote attestation.</li>
@@ -57,15 +60,37 @@ public class TamperDetectionScanCommand extends AbstractCommand {
 		}
 	}
 
+	/**
+	 * Emulator-detection signal — concrete values an emulator check actually compares against
+	 * (goldfish/ranchu/qemu kernels, the SDK fingerprint values {@code generic_x86}/{@code google_sdk}/
+	 * {@code sdk_gphone}, the VirtualBox product {@code vbox86p}, Genymotion, the qemu device sockets),
+	 * plus a self-identifying helper call ({@code isEmulator}). A bare {@code Build.FINGERPRINT}
+	 * reference is intentionally ABSENT — non-emulator code (crash reporting, device fingerprinting,
+	 * risk control) reads the fingerprint too, so flagging the field access alone was a false positive;
+	 * only a comparison against a known emulator value counts, and those values are listed here.
+	 *
+	 * <p>Declared before {@link #RULES} (which references it) so static init order is well-defined.
+	 * Package-private so a test can assert the FP guard (bare FINGERPRINT does not fire; a real
+	 * comparison against a concrete emulator value does).
+	 */
+	static final Pattern EMULATOR_PATTERN = Pattern.compile(
+			"goldfish|ranchu|\\bqemu\\b|generic_x86|google_sdk|sdk_gphone|Genymotion|genymotion|"
+					+ "vbox86p|vbox86|\"unknown\"\\s*\\)|isEmulator|/dev/socket/qemud|/dev/qemu_pipe|"
+					+ "Android SDK built for x86|sdk_gphone64|generic_x86_64|"
+					// A Build field compared against the "generic" emulator value — e.g.
+					// Build.FINGERPRINT.startsWith("generic") / Build.BRAND.equals("generic"). The bare
+					// field read `Build.FINGERPRINT;` is NOT matched (no method call + generic arg), which
+					// is exactly the FP we want to avoid for crash-reporting / device-fingerprinting code.
+					+ "Build\\.\\w+\\.[A-Za-z]\\w*\\s*\\([^)]*generic");
+
 	private static final List<Rule> RULES = List.of(
 			new Rule(Pattern.compile(
 					"/system/(x?bin)/su\\b|\"su\"|test-keys|Superuser\\.apk|com\\.topjohnwu\\.magisk|eu\\.chainfire|com\\.noshufou\\.android\\.su|RootBeer|isDeviceRooted|checkRootMethod|/system/app/Superuser|busybox|magisk"),
 					"root",
 					"Root-detection marker (su path / Magisk-SuperSU package / RootBeer / test-keys)"),
-			new Rule(Pattern.compile(
-					"goldfish|ranchu|\\bqemu\\b|generic_x86|sdk_gphone|Genymotion|genymotion|vbox86|\"unknown\"\\s*\\)|Build\\.FINGERPRINT|isEmulator|/dev/socket/qemud|/dev/qemu_pipe"),
+			new Rule(EMULATOR_PATTERN,
 					"emulator",
-					"Emulator-detection marker (goldfish/ranchu/qemu / generic fingerprint / Genymotion / VBox)"),
+					"Emulator-detection marker (goldfish/ranchu/qemu / concrete emulator fingerprint-model-hardware values / Genymotion / VBox)"),
 			new Rule(Pattern.compile(
 					"isDebuggerConnected\\s*\\(|waitingForDebugger\\s*\\(|ApplicationInfo\\.FLAG_DEBUGGABLE|FLAG_DEBUGGABLE|android\\.os\\.Debug|Debug\\.threadCpuTimeNanos"),
 					"debugger",
