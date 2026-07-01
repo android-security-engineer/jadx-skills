@@ -33,6 +33,9 @@ import jadx.api.JavaClass;
  *   <li>{@code unvalidated_insert} — {@code insert()} without caller validation</li>
  *   <li>{@code unvalidated_update} — {@code update()} without caller validation</li>
  *   <li>{@code unvalidated_delete} — {@code delete()} without caller validation</li>
+ *   <li>{@code unvalidated_call} — {@code call(String, String, Bundle)} without caller validation —
+ *       a free-form RPC entry point NOT tied to the URI/selection permission model; any app can
+ *       invoke arbitrary method names via {@code resolver.call(uri, method, ...)} (CWE-862)</li>
  *   <li>{@code sql_injection_provider} — a SQL sink (rawQuery/execSQL/query/appendWhere/setTables)
  *       on a line that builds its argument dynamically (+ concat, String.format, StringBuilder,
  *       or .concat) inside {@code query()} — selection/sortOrder arguments enable SQL injection;
@@ -45,7 +48,7 @@ import jadx.api.JavaClass;
  * highSeverityCount, unvalidatedProviders, truncated}}.
  */
 @Command(name = "content-provider-scan",
-		description = "Detect ContentProvider access-control defects (MASVS MSTG-STORAGE-6): unvalidated query/insert/update/delete in exported providers, SQL injection in query(), path traversal in openFile(). Distinct from exported-provider-scan (manifest inventory) and storage-scan (insecure storage APIs)")
+		description = "Detect ContentProvider access-control defects (MASVS MSTG-STORAGE-6): unvalidated query/insert/update/delete and call() free-form RPC entry point (CWE-862) in exported providers, SQL injection in query(), path traversal in openFile(). Distinct from exported-provider-scan (manifest inventory) and storage-scan (insecure storage APIs)")
 public class ContentProviderScanCommand extends AbstractCommand {
 
 	@Option(names = { "-p", "--package" }, description = "Only scan classes under this package prefix")
@@ -77,6 +80,16 @@ public class ContentProviderScanCommand extends AbstractCommand {
 			"public\\s+(?:(?:final|synchronized|static)\\s+)*int\\s+delete\\s*\\(");
 	static final Pattern OPEN_FILE_METHOD = Pattern.compile(
 			"public\\s+(?:(?:final|synchronized|static)\\s+)*ParcelFileDescriptor\\s+openFile\\s*\\(");
+
+	/**
+	 * The free-form RPC entry point on a ContentProvider — {@code public Bundle call(String method,
+	 * String arg, Bundle extras)}. Unlike query/insert/update/delete, {@code call()} is NOT tied to a
+	 * URI/selection permission model: an exported provider's {@code call()} is an arbitrary
+	 * method-dispatch channel a caller reaches with {@code resolver.call(uri, "method", ...)} (CWE-862).
+	 * Same final/synchronized modifier gap as the CRUD anchors. Package-private for testing.
+	 */
+	static final Pattern CALL_METHOD = Pattern.compile(
+			"public\\s+(?:(?:final|synchronized|static)\\s+)*Bundle\\s+call\\s*\\(\\s*(?:@\\w+\\s+)*String");
 
 	/** Caller validation patterns. */
 	private static final Pattern CALLER_CHECK = Pattern.compile(
@@ -159,6 +172,7 @@ public class ContentProviderScanCommand extends AbstractCommand {
 			boolean hasUpdate = UPDATE_METHOD.matcher(code).find();
 			boolean hasDelete = DELETE_METHOD.matcher(code).find();
 			boolean hasOpenFile = OPEN_FILE_METHOD.matcher(code).find();
+			boolean hasCall = CALL_METHOD.matcher(code).find();
 
 			// Unvalidated CRUD methods
 			if (!classHasCallerCheck) {
@@ -188,6 +202,18 @@ public class ContentProviderScanCommand extends AbstractCommand {
 					findings.add(finding("unvalidated_delete", "high", fullName, 0,
 							"ContentProvider.delete() without caller validation — "
 									+ "any app can delete the provider's data"));
+					highSeverityCount++;
+				}
+				// call() is a free-form RPC entry point: NOT tied to a URI/selection permission model,
+				// so an exported provider's call() is an arbitrary method-dispatch channel any caller
+				// reaches with resolver.call(uri, "method", ...). Without caller validation it is a
+				// direct IPC privilege surface (CWE-862) — distinct from the CRUD methods.
+				if (hasCall) {
+					unvalidatedProviders.add(fullName);
+					findings.add(finding("unvalidated_call", "high", fullName, 0,
+							"ContentProvider.call(String, String, Bundle) without caller validation — "
+									+ "free-form RPC entry point; any app can invoke arbitrary method names via "
+									+ "resolver.call(uri, method, ...) bypassing the URI/selection permission model"));
 					highSeverityCount++;
 				}
 			}

@@ -272,7 +272,7 @@ public class McpToolDefinitions {
 				optArg("limit", "integer", "Maximum number of findings", 200)));
 
 		tools.add(tool("jadx_content_provider_scan",
-				"Detect ContentProvider access-control defects (MASVS MSTG-STORAGE-6): unvalidated query/insert/update/delete (no getCallingPackage/getCallingUid check), SQL injection via rawQuery/string concat in query(), path traversal in openFile() via URI path segments. Distinct from exported-provider-scan (manifest inventory) and storage-scan (insecure storage APIs)",
+				"Detect ContentProvider access-control defects (MASVS MSTG-STORAGE-6): unvalidated query/insert/update/delete (no getCallingPackage/getCallingUid check), unvalidated call() free-form RPC entry point (CWE-862), SQL injection via rawQuery/string concat in query(), path traversal in openFile() via URI path segments. Distinct from exported-provider-scan (manifest inventory) and storage-scan (insecure storage APIs)",
 				optArg("package", "string", "Only scan classes under this package prefix", null),
 				optArg("limit", "integer", "Maximum number of findings", 200)));
 
