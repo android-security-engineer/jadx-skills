@@ -22,7 +22,9 @@ import jadx.api.JadxDecompiler;
  *   <li>{@code cleartextTrafficPermitted="true"} — plaintext HTTP allowed</li>
  *   <li>{@code <trust-anchors><certificates src="user"/>} — trusts user-installed CAs, which makes
  *       interception (and thus MITM during analysis) trivial</li>
- *   <li>presence/absence of {@code <pin-set>} certificate pinning</li>
+ *   <li>presence/absence of {@code <pin-set>} certificate pinning, plus its {@code expiration} —
+ *       an expired pin-set silently stops being enforced (Android falls back to system trust),
+ *       and a single pin with no backup risks lockout on key rotation</li>
  * </ul>
  * When no NSC is referenced it reports the platform default (cleartext blocked by default on
  * targetSdk ≥ 28, permitted below), so the absence itself is actionable.
@@ -120,6 +122,36 @@ public class NetworkSecurityConfigCommand extends AbstractCommand {
 		cfg.put("trustsUserCa", trustsUserCa);
 		cfg.put("certificatePinning", hasPinning);
 
+		// Pin-set expiration: once the expiration date passes, Android STOPS enforcing the pins and
+		// silently falls back to system trust — a pinning bypass that looks configured but isn't.
+		if (hasPinning) {
+			Matcher pm = Pattern.compile("<pin-set\\b([^>]*)>", Pattern.DOTALL).matcher(body);
+			if (pm.find()) {
+				String expiration = attr(pm.group(1), "expiration");
+				int pinCount = countMatches(body, "<pin\\b");
+				cfg.put("pinCount", pinCount);
+				if (expiration != null && !expiration.isEmpty()) {
+					cfg.put("pinExpiration", expiration);
+					Boolean expired = isPastDate(expiration);
+					if (Boolean.TRUE.equals(expired)) {
+						cfg.put("pinExpired", true);
+						findings.add(finding("pin_set_expired", "high", scope,
+								"Certificate pinning expired on " + expiration + " for " + scope
+										+ " — Android silently falls back to system trust; pins no longer enforced"));
+					} else if (expired != null) {
+						cfg.put("pinExpired", false);
+					}
+				}
+				// A single pin with no backup risks permanent lockout on key rotation (Google recommends
+				// at least one backup pin); reported as low so operators can weigh availability vs. rigor.
+				if (pinCount == 1) {
+					findings.add(finding("pin_set_no_backup", "low", scope,
+							"pin-set for " + scope + " has a single pin and no backup — key rotation "
+									+ "would brick TLS; include a backup pin"));
+				}
+			}
+		}
+
 		if (cleartext) {
 			findings.add(finding("cleartext_permitted", "medium", scope,
 					"cleartextTrafficPermitted=\"true\" allows plaintext HTTP for " + scope));
@@ -145,6 +177,30 @@ public class NetworkSecurityConfigCommand extends AbstractCommand {
 	private static String attr(String attrs, String name) {
 		Matcher m = Pattern.compile(Pattern.quote(name) + "\\s*=\\s*\"([^\"]*)\"").matcher(attrs);
 		return m.find() ? m.group(1) : null;
+	}
+
+	private static int countMatches(String text, String regex) {
+		Matcher m = Pattern.compile(regex).matcher(text);
+		int n = 0;
+		while (m.find()) {
+			n++;
+		}
+		return n;
+	}
+
+	/**
+	 * True if {@code yyyy-MM-dd} (the NSC pin-set expiration format) is strictly before today; false
+	 * if today or later; null if it can't be parsed (so callers don't flag a malformed date as expired).
+	 */
+	static Boolean isPastDate(String yyyyMmDd) {
+		try {
+			java.text.SimpleDateFormat fmt = new java.text.SimpleDateFormat("yyyy-MM-dd");
+			fmt.setLenient(false);
+			java.util.Date exp = fmt.parse(yyyyMmDd.trim());
+			return exp.before(new java.util.Date());
+		} catch (Exception e) {
+			return null;
+		}
 	}
 
 	@Override
