@@ -1028,6 +1028,7 @@ class CommandsTest {
 		assertTrue(output.contains("\"exportedCount\""), "Must report parsed .dynsym export count: " + output);
 		assertTrue(output.contains("\"importedFunctions\""), "Must list imported symbols: " + output);
 		assertTrue(output.contains("\"jniExports\""), "Must surface the JNI export surface: " + output);
+		assertTrue(output.contains("\"behaviors\""), "Must include capa-style behavior tags: " + output);
 	}
 
 	@Test

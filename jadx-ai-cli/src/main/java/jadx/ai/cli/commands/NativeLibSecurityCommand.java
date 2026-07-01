@@ -163,11 +163,13 @@ public class NativeLibSecurityCommand extends AbstractCommand {
 
 		// Ground-truth dynamic symbol table (nm -D). Survives strip, so it beats the string heuristic:
 		// exportedCount/jniExports are the REAL native attack surface to cross-ref native-bridge-index.
-		jadx.ai.cli.util.ElfSymbols syms = jadx.ai.cli.util.ElfSymbols.parse(data, 200);
+		// Parse with a generous cap so behavior classification sees the full import set; the JSON
+		// output lists are sub-capped to 200 to stay readable.
+		jadx.ai.cli.util.ElfSymbols syms = jadx.ai.cli.util.ElfSymbols.parse(data, 4000);
 		lib.put("exportedCount", syms.exportedCount);
 		lib.put("importedCount", syms.importedCount);
-		lib.put("exportedFunctions", syms.exported);
-		lib.put("importedFunctions", syms.imported);
+		lib.put("exportedFunctions", capList(syms.exported, 200));
+		lib.put("importedFunctions", capList(syms.imported, 200));
 		lib.put("jniExports", syms.jniExports); // Java_* / JNI_OnLoad actually present in the .so
 
 		// Stack canary: __stack_chk_fail present. Prefer the parsed .dynsym (exact) over a string grep,
@@ -227,7 +229,21 @@ public class NativeLibSecurityCommand extends AbstractCommand {
 			}
 			lib.put("obfuscationIndicators", obfuscationIndicators);
 
+			// capa-style behavior inference from imported symbols + high-signal strings (anti-debug,
+			// dynamic loading, self-modification, process-exec, networking, crypto, root/tamper detect).
+			String asciiForTags = extractAsciiStrings(data, 4);
+			List<Map<String, Object>> behaviors = jadx.ai.cli.util.NativeBehavior.classify(
+					new java.util.LinkedHashSet<>(syms.imported), asciiForTags);
+			lib.put("behaviors", behaviors);
+
 		return lib;
+	}
+
+	private static List<String> capList(List<String> in, int max) {
+		if (in.size() <= max) {
+			return in;
+		}
+		return new ArrayList<>(in.subList(0, max));
 	}
 
 	private static String getArch(byte[] data, boolean is64) {
