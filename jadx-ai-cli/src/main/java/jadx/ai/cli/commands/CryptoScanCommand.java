@@ -46,7 +46,15 @@ public class CryptoScanCommand extends AbstractCommand {
 	private static final Pattern DIGEST_GET = Pattern.compile("MessageDigest\\.getInstance\\(\\s*\"([^\"]+)\"");
 	private static final Pattern MAC_GET = Pattern.compile("Mac\\.getInstance\\(\\s*\"([^\"]+)\"");
 	private static final Pattern SECRET_KEY = Pattern.compile("new\\s+SecretKeySpec\\(");
-	private static final Pattern IV_LITERAL = Pattern.compile("new\\s+IvParameterSpec\\(\\s*new\\s+byte\\[\\]");
+	// An IV/nonce built from an inline `new byte[...]` — both the initializer form `new byte[]{...}`
+	// and, critically, the zero-filled sized form `new byte[16]` (a fixed all-zero IV). If the array
+	// were randomized it would be filled via a separate variable, so an inline construction here is a
+	// static IV by construction.
+	private static final Pattern IV_LITERAL = Pattern.compile("new\\s+IvParameterSpec\\(\\s*new\\s+byte\\[");
+	// A GCM nonce built inline the same way. GCM is far less forgiving than CBC: reusing a nonce under
+	// the same key breaks BOTH confidentiality and authenticity (allows forgery / key-stream recovery).
+	private static final Pattern GCM_IV_LITERAL = Pattern.compile(
+			"new\\s+GCMParameterSpec\\s*\\(\\s*[^,]*,\\s*new\\s+byte\\[");
 	private static final Pattern INSECURE_RANDOM = Pattern.compile("new\\s+Random\\(|Math\\.random\\(");
 	// Markers that a class actually does crypto, so insecure-RNG noise is scoped to crypto code.
 	private static final Pattern CRYPTO_MARKER =
@@ -120,6 +128,12 @@ public class CryptoScanCommand extends AbstractCommand {
 				findings.add(finding(cls, ln, "key_handling", "medium", "SecretKeySpec",
 						"SecretKeySpec construction — verify the key is not hardcoded"));
 			}
+			if (GCM_IV_LITERAL.matcher(line).find() && findings.size() < limit) {
+				findings.add(finding(cls, ln, "static_gcm_nonce", "high", "GCMParameterSpec",
+						"GCM nonce built from an inline byte[] — a static/repeated GCM nonce under one key "
+								+ "is catastrophic: it breaks confidentiality AND authenticity (enables forgery). "
+								+ "Use a fresh random 12-byte nonce per encryption."));
+			}
 			if (IV_LITERAL.matcher(line).find() && findings.size() < limit) {
 				findings.add(finding(cls, ln, "static_iv", "medium", "IvParameterSpec",
 						"IV built from an inline byte[] literal — likely a static/hardcoded IV"));
@@ -131,15 +145,33 @@ public class CryptoScanCommand extends AbstractCommand {
 		}
 	}
 
-	/** Parse an {@code algorithm/mode/padding} transformation and flag weak algorithm or mode. */
-	private void classifyCipher(String transformation, String cls, int ln, List<Map<String, Object>> findings) {
+	/** Parse an {@code algorithm/mode/padding} transformation and flag weak algorithm or mode. Package-private for testing. */
+	void classifyCipher(String transformation, String cls, int ln, List<Map<String, Object>> findings) {
 		String[] parts = transformation.split("/");
 		String algo = parts[0].trim().toUpperCase(Locale.ROOT);
 		String mode = parts.length > 1 ? parts[1].trim().toUpperCase(Locale.ROOT) : null;
+		String padding = parts.length > 2 ? parts[2].trim().toUpperCase(Locale.ROOT) : null;
 
 		if (WEAK_CIPHERS.contains(algo)) {
 			findings.add(finding(cls, ln, "weak_cipher", "high", transformation,
 					"Broken/weak cipher algorithm: " + algo));
+			return;
+		}
+		// RSA (asymmetric): "ECB" here is a JCA naming artifact meaning single-block, NOT the
+		// block-chaining ECB weakness — "RSA/ECB/OAEP..." is the recommended spelling, so it must NOT
+		// be flagged as ecb_mode. The real RSA risk is the padding: PKCS#1 v1.5 ("PKCS1Padding", also
+		// the default for a bare "RSA") is padding-oracle/Bleichenbacher-prone; OAEP is the fix.
+		if ("RSA".equals(algo)) {
+			boolean oaep = padding != null && padding.contains("OAEP");
+			if (!oaep) {
+				String pad = padding == null ? "PKCS1Padding (default)" : parts[2].trim();
+				findings.add(finding(cls, ln, "rsa_weak_padding", "medium", transformation,
+						"RSA with " + pad + " — PKCS#1 v1.5 padding is vulnerable to Bleichenbacher/"
+								+ "padding-oracle attacks; use OAEP (RSA/ECB/OAEPWithSHA-256AndMGF1Padding)"));
+			} else {
+				findings.add(finding(cls, ln, "cipher", "info", transformation,
+						"Cipher transformation: " + transformation));
+			}
 			return;
 		}
 		if ("ECB".equals(mode)) {
