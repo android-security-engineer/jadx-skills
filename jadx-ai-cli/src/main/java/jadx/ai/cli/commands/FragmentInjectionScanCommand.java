@@ -39,7 +39,11 @@ import jadx.api.JavaClass;
  *       potentially untrusted input</li>
  *   <li>{@code preference_fragment_injection} — PreferenceActivity with
  *       EXTRA_SHOW_FRAGMENT — Android < 4.4 allows arbitrary Fragment
- *       injection via this intent extra</li>
+ *       injection via this intent extra. <b>Downgraded</b> to
+ *       {@code preference_fragment_protected}/{@code info} when the class
+ *       overrides {@code isValidFragment()} — that override IS the documented
+ *       fix (it whitelists allowed Fragment classes), so flagging a protected
+ *       app as a high-severity injection was a false positive</li>
  *   <li>{@code webview_fragment} — WebView inside Fragment with JS enabled —
  *       combined attack surface</li>
  * </ul>
@@ -85,6 +89,15 @@ public class FragmentInjectionScanCommand extends AbstractCommand {
 			"EXTRA_SHOW_FRAGMENT|showFragment|"
 					+ "PreferenceActivity|HEADER_ID|EXTRA_SHOW_FRAGMENT_ARGUMENTS|"
 					+ "EXTRA_NO_HEADERS|VALID_FRAGMENT");
+	/**
+	 * An override of {@code PreferenceActivity.isValidFragment(String)} — the documented mitigation for
+	 * EXTRA_SHOW_FRAGMENT injection (Android < 4.4). Matches a method declaration: a method named
+	 * {@code isValidFragment} taking one arg and returning boolean, with any body. Decompiled output
+	 * spells it {@code public boolean isValidFragment(String fragmentName)} or {@code isValidFragment(String)}.
+	 * Package-private so a test can assert the FP guard with synthetic input.
+	 */
+	static final Pattern IS_VALID_FRAGMENT_OVERRIDE = Pattern.compile(
+			"isValidFragment\\s*\\(\\s*[A-Za-z_][^)]*\\)\\s*\\{", Pattern.DOTALL);
 	private static final Pattern WEBVIEW_FRAGMENT = Pattern.compile(
 			"WebView.*Fragment|Fragment.*WebView|"
 					+ "setJavaScriptEnabled\\(true\\).*Fragment|"
@@ -158,17 +171,33 @@ public class FragmentInjectionScanCommand extends AbstractCommand {
 
 			// Per-line rule detection (first-match-wins, ONE/class per kind)
 			TreeSet<String> reportedKinds = new TreeSet<>();
+			boolean protectedByIsValidFragment = protectedByIsValidFragment(code);
 			String[] lines = code.split("\n", -1);
 			for (int i = 0; i < lines.length && findings.size() < limit; i++) {
 				String line = lines[i];
 				for (Rule r : RULES) {
 					if (!reportedKinds.contains(r.kind) && r.pattern.matcher(line).find()) {
-						findings.add(finding(r.kind, r.severity, fullName, i + 1, r.detail));
+						// FP guard: PreferenceActivity injection is already mitigated by an
+						// isValidFragment() override — that override IS the fix. Downgrade from
+						// high/injection to info/protected rather than cry wolf on hardened code.
+						String kind = r.kind;
+						String severity = r.severity;
+						String detail = r.detail;
+						if ("preference_fragment_injection".equals(r.kind) && protectedByIsValidFragment) {
+							kind = "preference_fragment_protected";
+							severity = "info";
+							detail = "PreferenceActivity surface present but the class overrides "
+									+ "isValidFragment() — the documented mitigation for EXTRA_SHOW_FRAGMENT "
+									+ "injection (Android < 4.4); verify the override whitelists only expected "
+									+ "Fragment classes";
+						}
+						findings.add(finding(kind, severity, fullName, i + 1, detail));
 						reportedKinds.add(r.kind);
-						if ("high".equals(r.severity)) {
+						if ("high".equals(severity)) {
 							highSeverityCount++;
 						}
-						if ("fragment_from_intent".equals(r.kind) || "preference_fragment_injection".equals(r.kind)) {
+						if ("fragment_from_intent".equals(kind)
+								|| "preference_fragment_injection".equals(kind)) {
 							hasFragmentInjection = true;
 						}
 						break;
@@ -184,6 +213,15 @@ public class FragmentInjectionScanCommand extends AbstractCommand {
 		data.put("hasFragmentInjection", hasFragmentInjection);
 		data.put("truncated", findings.size() >= limit);
 		return JsonOutput.ok(data);
+	}
+
+	/**
+	 * True if the decompiled class body overrides {@code isValidFragment(String)} — the documented
+	 * mitigation for EXTRA_SHOW_FRAGMENT Fragment injection. Package-private so a synthetic-input test
+	 * can assert the FP guard without spinning up jadx.
+	 */
+	static boolean protectedByIsValidFragment(String code) {
+		return code != null && IS_VALID_FRAGMENT_OVERRIDE.matcher(code).find();
 	}
 
 	private static Map<String, Object> finding(String kind, String severity, String className, int line, String detail) {
