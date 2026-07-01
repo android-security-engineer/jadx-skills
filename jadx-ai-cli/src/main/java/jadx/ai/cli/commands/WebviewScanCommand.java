@@ -30,6 +30,7 @@ import jadx.api.JavaClass;
  *   <li>{@code setAllowFileAccess(true)} / {@code setAllowContentAccess(true)} — file:// and content://
  *       reachable from web content</li>
  *   <li>{@code setMixedContentMode(MIXED_CONTENT_ALWAYS_ALLOW)} — https page may load http resources</li>
+ *   <li>{@code onReceivedSslError → handler.proceed()} — accepts any invalid TLS cert (trivial MITM, high)</li>
  *   <li>{@code setWebContentsDebuggingEnabled(true)} — remote debugging left on in production</li>
  *   <li>{@code setSavePassword(true)} — deprecated insecure credential storage</li>
  *   <li>{@code loadUrl("http://...")} / {@code loadData} over cleartext</li>
@@ -87,6 +88,11 @@ public class WebviewScanCommand extends AbstractCommand {
 	// Only scan classes that actually touch WebView, to keep results focused.
 	private static final Pattern WEBVIEW_MARKER = Pattern.compile("WebView|WebSettings|WebViewClient|WebChromeClient");
 
+	// Class-level (multi-line) signal: an onReceivedSslError override that calls handler.proceed()
+	// accepts ANY invalid TLS certificate — trivial MITM. The method signature and the proceed()
+	// call sit on different lines, so the per-line rules above can't express it.
+	private static final Pattern SSL_PROCEED = Pattern.compile("\\.proceed\\s*\\(");
+
 	@Override
 	protected void applyArgs(Map<String, Object> args) {
 		this.packageFilter = (String) args.get("package");
@@ -100,6 +106,7 @@ public class WebviewScanCommand extends AbstractCommand {
 		List<Map<String, Object>> findings = new ArrayList<>();
 		boolean sawJsEnabled = false;
 		boolean sawJsInterface = false;
+		boolean sawSslBypass = false;
 
 		for (JavaClass cls : decompiler.getClasses()) {
 			if (findings.size() >= limit) {
@@ -138,6 +145,14 @@ public class WebviewScanCommand extends AbstractCommand {
 					}
 				}
 			}
+
+			// Class-level: onReceivedSslError override that proceeds past a cert error (spans lines).
+			if (findings.size() < limit && hasSslBypass(code)) {
+				findings.add(finding(fullName, lineOf(lines, ".proceed("), "ssl_error_ignored", "high",
+						"onReceivedSslError calls handler.proceed() — accepts ANY invalid TLS certificate "
+								+ "(trivial MITM); validate the chain and call handler.cancel() on error"));
+				sawSslBypass = true;
+			}
 		}
 
 		Map<String, Object> data = new LinkedHashMap<>();
@@ -145,8 +160,29 @@ public class WebviewScanCommand extends AbstractCommand {
 		data.put("count", findings.size());
 		// The classic JS-bridge RCE precondition: JS enabled AND a Java object exposed to it.
 		data.put("jsBridgeExposed", sawJsEnabled && sawJsInterface);
+		// TLS validation defeated in a WebViewClient — MITM regardless of the app's other pinning.
+		data.put("sslValidationDisabled", sawSslBypass);
 		data.put("truncated", findings.size() >= limit);
 		return JsonOutput.ok(data);
+	}
+
+	/**
+	 * True if a class overrides {@code onReceivedSslError} and calls {@code handler.proceed()} — the
+	 * blind-accept-any-cert pattern. Requires both tokens so a correct handler that calls
+	 * {@code cancel()} is not flagged.
+	 */
+	static boolean hasSslBypass(String code) {
+		return code.contains("onReceivedSslError") && SSL_PROCEED.matcher(code).find();
+	}
+
+	/** 1-based line number of the first line containing {@code needle}, or 0 if none. */
+	private static int lineOf(String[] lines, String needle) {
+		for (int i = 0; i < lines.length; i++) {
+			if (lines[i].contains(needle)) {
+				return i + 1;
+			}
+		}
+		return 0;
 	}
 
 	private static Map<String, Object> finding(String cls, int line, String kind, String severity, String detail) {
