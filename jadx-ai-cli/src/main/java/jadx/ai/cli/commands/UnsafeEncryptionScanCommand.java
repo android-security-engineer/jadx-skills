@@ -90,9 +90,15 @@ public class UnsafeEncryptionScanCommand extends AbstractCommand {
 					+ "\"SSL\"|\"TLSv1\"|\"TLSv1\\.1\"|"
 					+ "setEnabledProtocols.*SSL|SSLv3|"
 					+ "setProtocol.*SSL|PROTOCOL_SSL|PROTOCOL_TLSV1\\b");
-	private static final Pattern CUSTOM_PADDING = Pattern.compile(
-			"customPadding|CustomPadding|myPadding|PKCS1Padding|"
-					+ "NoPadding|ISO10126Padding|X923Padding|"
+	/**
+	 * Custom (home-rolled) padding — named heuristics only. Previously also matched the standard JCA
+	 * padding names NoPadding/PKCS1Padding/ISO10126Padding/X923Padding, flagging every legitimate
+	 * AES/GCM/NoPadding (the recommended AEAD form) and RSA/ECB/PKCS1Padding as "custom padding" —
+	 * an FP on correct crypto. Standard padding misuse is cryptographic-misuse-scan's job
+	 * (rsa_without_oaep / ecb_mode). Package-private for testing.
+	 */
+	static final Pattern CUSTOM_PADDING = Pattern.compile(
+			"customPadding|CustomPadding|myPadding|"
 					+ "implementPadding|paddingScheme\\s*=");
 
 	private static final class Rule {
