@@ -86,12 +86,20 @@ public class CryptographicMisuseScanCommand extends AbstractCommand {
 					+ "MessageDigest\\.getInstance\\s*\\(\\s*\"SHA1\"|"
 					+ "\"SHA-1\"\\s*.*MessageDigest|SHA1\\s*.*password|"
 					+ "SHA-1\\s*.*signature|SHA1\\s*.*verify");
-	private static final Pattern WEAK_KEY_SIZE = Pattern.compile(
+	/**
+	 * Weak key sizes — below recommended minimums. Covers the legacy {@code keySize=} assignment AND
+	 * the API 23+ AndroidKeyStore standard {@code KeyGenParameterSpec.Builder.setKeySize(int)} setter:
+	 * modern Android crypto code sets the key size via {@code spec.setKeySize(64)}, which the bare
+	 * {@code keySize=} regex does not match. Only weak values are listed so a legitimate
+	 * {@code setKeySize(256)} / {@code setKeySize(2048)} is not flagged. Package-private for testing.
+	 */
+	static final Pattern WEAK_KEY_SIZE = Pattern.compile(
 			"KeyGenerator.*AES.*128|AES.*128.*key|"
 					+ "KeyPairGenerator.*RSA.*1024|RSA.*1024|"
 					+ "KeyGenerator.*DES|DES.*key|DESede.*112|"
 					+ "keySize\\s*=\\s*(56|80|96|112)|"
-					+ "RSA.*keySize.*1024");
+					+ "RSA.*keySize.*1024|"
+					+ "setKeySize\\s*\\(\\s*(56|64|80|96|112|1024)\\s*\\)");
 	private static final Pattern PREDICTABLE_SEED = Pattern.compile(
 			"new\\s+SecureRandom\\s*\\([^)]+\\)|"
 					+ "SecureRandom\\s*\\(\\s*\"|"
