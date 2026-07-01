@@ -1088,6 +1088,14 @@ class CommandsTest {
 	}
 
 	@Test
+	void testReactNativeAnalysisCommand() {
+		String output = runCommand("react-native-analysis", testDex.getAbsolutePath());
+		assertNotNull(output);
+		assertTrue(output.contains("\"success\": true"), "Should succeed: " + output);
+		assertTrue(output.contains("\"isReactNative\""), "Should contain isReactNative: " + output);
+	}
+
+	@Test
 	void testSourceQualityReportCommand() {
 		String output = runCommand("source-quality-report", testDex.getAbsolutePath());
 		assertNotNull(output);

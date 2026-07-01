@@ -101,6 +101,7 @@ import jadx.ai.cli.commands.DangerousApiMapCommand;
 import jadx.ai.cli.commands.ManifestSecurityAuditCommand;
 import jadx.ai.cli.commands.Il2cppMetadataScanCommand;
 import jadx.ai.cli.commands.FlutterAnalysisCommand;
+import jadx.ai.cli.commands.ReactNativeAnalysisCommand;
 import jadx.ai.cli.commands.SourceQualityReportCommand;
 import jadx.ai.cli.commands.ClassInventoryCommand;
 import jadx.ai.cli.commands.EntrypointScanCommand;
@@ -232,6 +233,7 @@ import jadx.ai.cli.commands.UsageCommand;
 					ManifestSecurityAuditCommand.class,
 					Il2cppMetadataScanCommand.class,
 					FlutterAnalysisCommand.class,
+					ReactNativeAnalysisCommand.class,
 					SourceQualityReportCommand.class,
 					ClassInventoryCommand.class,
 					EntrypointScanCommand.class,

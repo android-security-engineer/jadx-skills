@@ -545,6 +545,10 @@ public class McpToolDefinitions {
 		tools.add(tool("jadx_flutter_analysis",
 				"Analyze Flutter/Dart APK structure: detect Flutter version, snapshot files, Dart widget identifiers",
 				optArg("limit", "integer", "Maximum identifiers to return", 200)));
+		tools.add(tool("jadx_react_native_analysis",
+				"Analyze a React Native APK: detect Hermes bytecode vs plaintext JS bundle, read the Hermes bytecode version, and scan index.android.bundle bytes for secrets and cleartext URLs that Java-only scanners miss",
+				optArg("min_entropy", "number", "Min Shannon entropy for generic secret detection in the bundle", 4.0),
+				optArg("limit", "integer", "Maximum secrets/URLs to return", 200)));
 		tools.add(tool("jadx_source_quality_report",
 				"Evaluate decompiled code quality: error markers, stubs, obfuscation indicators, catch-all handlers",
 				optArg("package", "string", "Only scan classes under this package prefix", null),
