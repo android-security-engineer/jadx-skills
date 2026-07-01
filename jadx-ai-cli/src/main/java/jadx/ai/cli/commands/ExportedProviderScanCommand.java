@@ -64,6 +64,24 @@ public class ExportedProviderScanCommand extends AbstractCommand {
 	// String concatenation on a line: a quote adjacent to a + (or + adjacent to a quote).
 	private static final Pattern CONCAT = Pattern.compile("\"\\s*\\+|\\+\\s*\"");
 
+	/**
+	 * A provider SQL argument built dynamically on the same line as a SQL sink, but NOT via {@code +} —
+	 * {@code String.format}, {@code StringBuilder.append}, {@code .concat}, or {@code MessageFormat}.
+	 * Same IPC-reachable injection class as {@code +} concatenation, but {@code CONCAT} does not match
+	 * it, so the line fell through to {@code provider_uri_trusted/info} instead of
+	 * {@code provider_sql_injection/high} (e.g. {@code db.rawQuery(String.format("...WHERE id=%s",
+	 * uri.getLastPathSegment()), null)}). Matched only inside a SQL-sink argument (up to the next
+	 * {@code ;}) so a {@code String.format} used elsewhere on the line is not a false positive.
+	 * Package-private for testing.
+	 */
+	static final Pattern PROVIDER_SQL_DYNAMIC_ARG = Pattern.compile(
+			"(?:appendWhere\\s*\\(|setTables\\s*\\(|compileStatement\\s*\\(|"
+					+ "\\.rawQuery\\s*\\(|\\.execSQL\\s*\\(|\\.query\\s*\\(|\\.insert\\s*\\(|\\.update\\s*\\(|\\.delete\\s*\\()[^;]*?"
+					+ "(?:String\\.format|MessageFormat|new\\s+StringBuilder)"
+					+ "|(?:appendWhere\\s*\\(|setTables\\s*\\(|compileStatement\\s*\\(|"
+					+ "\\.rawQuery\\s*\\(|\\.execSQL\\s*\\(|\\.query\\s*\\(|\\.insert\\s*\\(|\\.update\\s*\\(|\\.delete\\s*\\()[^;]*?"
+					+ "\\.(?:concat|append)\\s*\\(");
+
 	private static final Pattern SQL_SINK = Pattern.compile(
 			"\\.rawQuery\\s*\\(|\\.execSQL\\s*\\(|\\.query\\s*\\(|appendWhere\\s*\\(|setTables\\s*\\(|"
 					+ "\\.insert\\s*\\(|\\.update\\s*\\(|\\.delete\\s*\\(|compileStatement\\s*\\(");
@@ -133,7 +151,11 @@ public class ExportedProviderScanCommand extends AbstractCommand {
 				String line = lines[i];
 				int ln = i + 1;
 
-				boolean concat = CONCAT.matcher(line).find();
+				// Dynamic argument construction: either + concatenation (CONCAT) or a
+				// String.format/StringBuilder/.concat form feeding a SQL sink (PROVIDER_SQL_DYNAMIC_ARG).
+				// Both are the same IPC-reachable injection class; the dynamic-arg form was previously
+				// missed because CONCAT does not match String.format.
+				boolean concat = CONCAT.matcher(line).find() || PROVIDER_SQL_DYNAMIC_ARG.matcher(line).find();
 
 				if (SQL_SINK.matcher(line).find() && concat) {
 					findings.add(finding(fullName, ln, "provider_sql_injection", "high",
