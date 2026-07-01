@@ -40,6 +40,9 @@ import jadx.api.JavaClass;
  *   <li>{@code sensitive_view_not_cleared} — Sensitive view (password/credit
  *       card) not cleared in onStop/onDestroy — data persists in recent-apps
  *       preview</li>
+ *   <li>{@code notification_lockscreen_leak} — Notification/NotificationChannel with sensitive
+ *       content (OTP/auth/payment) but no setVisibility(VISIBILITY_PRIVATE) /
+ *       setLockscreenVisibility — full body shown on the lockscreen (CWE-200, MSTG-STORAGE-7)</li>
  *   <li>{@code flag_secure_set} — FLAG_SECURE properly set — positive indicator</li>
  * </ul>
  *
@@ -47,7 +50,7 @@ import jadx.api.JavaClass;
  * highSeverityCount, hasFlagSecure, hasMissingFlagSecure, truncated}}.
  */
 @Command(name = "screenshot-leak-scan",
-		description = "Detect screenshot/recent-apps leaks (MASVS MSTG-STORAGE-9/PLATFORM-4): missing FLAG_SECURE on sensitive activities, conditional FLAG_SECURE, sensitive views not cleared. Distinct from screen-capture-scan (capture API detection)")
+		description = "Detect screenshot/recent-apps/lockscreen leaks (MASVS MSTG-STORAGE-9/PLATFORM-4/STORAGE-7): missing FLAG_SECURE on sensitive activities, conditional FLAG_SECURE, sensitive views not cleared, notification lockscreen leak (CWE-200). Distinct from screen-capture-scan (capture API detection)")
 public class ScreenshotLeakScanCommand extends AbstractCommand {
 
 	@Option(names = { "-p", "--package" }, description = "Only scan classes under this package prefix")
@@ -56,14 +59,15 @@ public class ScreenshotLeakScanCommand extends AbstractCommand {
 	@Option(names = { "--limit" }, description = "Maximum number of findings", defaultValue = "200")
 	protected int limit = 200;
 
-	/** Gate: only scan Activity classes with window/content markers. */
+	/** Gate: only scan Activity classes with window/content markers OR classes building notifications. */
 	private static final Pattern ACTIVITY_MARKER = Pattern.compile(
 			"Activity|FLAG_SECURE|setFlags|addFlags|getWindow|"
 					+ "password|Password|login|Login|banking|payment|"
-					+ "credit|card|pin|PIN|onCreate|setContentView");
+					+ "credit|card|pin|PIN|onCreate|setContentView|"
+					+ "NotificationCompat|Notification\\.Builder|NotificationChannel|createNotificationChannel");
 
-	/** Sensitive content markers. */
-	private static final Pattern SENSITIVE_CONTENT = Pattern.compile(
+	/** Sensitive content markers. Package-private for the notification-leak test. */
+	static final Pattern SENSITIVE_CONTENT = Pattern.compile(
 			"password|Password|passwd|login|Login|signin|signIn|"
 					+ "banking|payment|Payment|credit|Credit|card_number|"
 					+ "pin_entry|PinEntry|otp|OTP|auth|Auth|credential|"
@@ -85,6 +89,28 @@ public class ScreenshotLeakScanCommand extends AbstractCommand {
 					+ "android:password\\s*=\\s*\"true\"");
 	private static final Pattern ON_STOP_DESTROY = Pattern.compile(
 			"onStop\\s*\\(|onDestroy\\s*\\(|onPause\\s*\\(");
+
+	/**
+	 * Builds a Notification or creates a NotificationChannel — the lockscreen-visible surface. A
+	 * notification's content is shown on the lockscreen by default unless
+	 * {@link #LOCKSCREEN_PRIVATE} (setVisibility(VISIBILITY_PRIVATE) / setLockscreenVisibility /
+	 * VISIBILITY_SECRET) is applied. Package-private for testing.
+	 */
+	static final Pattern NOTIFICATION_BUILD = Pattern.compile(
+			"NotificationCompat\\.Builder|Notification\\.Builder|createNotificationChannel|"
+					+ "NotificationChannel\\s*\\(|setContentText\\s*\\(|setContentTitle\\s*\\(");
+
+	/**
+	 * Lockscreen redaction applied — {@code setVisibility(VISIBILITY_PRIVATE)} /
+	 * {@code setLockscreenVisibility(VISIBILITY_PRIVATE|SECRET)} / the {@code VISIBILITY_SECRET} or
+	 * {@code VISIBILITY_PRIVATE} constant. Its presence means the notification body is hidden on the
+	 * lockscreen (only "Notification" / redacted public version shown). Package-private for testing.
+	 */
+	static final Pattern LOCKSCREEN_PRIVATE = Pattern.compile(
+			"setVisibility\\s*\\([^)]*VISIBILITY_PRIVATE|"
+					+ "setVisibility\\s*\\([^)]*VISIBILITY_SECRET|"
+					+ "setLockscreenVisibility|"
+					+ "VISIBILITY_PRIVATE|VISIBILITY_SECRET");
 
 	private static final class Rule {
 		final Pattern pattern;
@@ -171,6 +197,23 @@ public class ScreenshotLeakScanCommand extends AbstractCommand {
 						"Sensitive view (password/credit card input) not cleared in "
 								+ "onStop/onDestroy — data persists in recent-apps preview; "
 								+ "clear sensitive fields in lifecycle methods"));
+			}
+
+			// Notification lockscreen leak: a Notification/NotificationChannel carrying sensitive content
+			// (OTP/auth/payment/message preview) but without setVisibility(VISIBILITY_PRIVATE)/
+			// setLockscreenVisibility — the full body shows on the lockscreen to anyone holding the device
+			// (CWE-200, MASVS MSTG-STORAGE-7). Distinct from FLAG_SECURE (window capture) — this is the
+			// notification-shade/lockscreen channel. ONE/class.
+			if (findings.size() < limit
+					&& NOTIFICATION_BUILD.matcher(code).find()
+					&& classHasSensitiveContent
+					&& !LOCKSCREEN_PRIVATE.matcher(code).find()) {
+				findings.add(finding("notification_lockscreen_leak", "medium", fullName, 0,
+						"Notification with sensitive content (OTP/auth/payment) but no "
+								+ "setVisibility(VISIBILITY_PRIVATE) / setLockscreenVisibility — the full "
+								+ "notification body is shown on the lockscreen (CWE-200, MSTG-STORAGE-7); "
+								+ "redact with VISIBILITY_PRIVATE or a public redacted version"));
+				// notification leak is medium (not high), so highSeverityCount unchanged
 			}
 
 			if (findings.size() >= limit) {

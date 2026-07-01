@@ -366,7 +366,7 @@ public class McpToolDefinitions {
 				optArg("limit", "integer", "Maximum number of findings", 200)));
 
 		tools.add(tool("jadx_screenshot_leak_scan",
-				"Detect screenshot/recent-apps leaks (MASVS MSTG-STORAGE-9/PLATFORM-4): missing FLAG_SECURE on sensitive activities (password/banking/payment), conditional FLAG_SECURE, FLAG_SECURE cleared, sensitive views not cleared in onStop/onDestroy. Distinct from screen-capture-scan (capture API detection)",
+				"Detect screenshot/recent-apps/lockscreen leaks (MASVS MSTG-STORAGE-9/PLATFORM-4/STORAGE-7): missing FLAG_SECURE on sensitive activities (password/banking/payment), conditional FLAG_SECURE, FLAG_SECURE cleared, sensitive views not cleared in onStop/onDestroy, notification lockscreen leak (sensitive Notification without setVisibility(VISIBILITY_PRIVATE), CWE-200). Distinct from screen-capture-scan (capture API detection)",
 				optArg("package", "string", "Only scan classes under this package prefix", null),
 				optArg("limit", "integer", "Maximum number of findings", 200)));
 
