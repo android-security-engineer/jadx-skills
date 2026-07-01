@@ -32,6 +32,10 @@ import jadx.api.JavaClass;
  *   <li>{@code execSQL(...)} / {@code execPerConnectionSQL(...)} with concatenation — high</li>
  *   <li>{@code compileStatement(...)} with concatenation — high</li>
  *   <li>{@code db.query(...)} / {@code queryWithFactory(...)} where the selection is concatenated — medium</li>
+ *   <li>{@code db.delete(table, whereClause, ...)} / {@code db.update(table, values, whereClause, ...)}
+ *       where the whereClause (or table) is concatenated — high; the whereClause sink is a classic
+ *       CWE-89 carrier on Android and was previously uncovered</li>
+ *   <li>{@code db.insert(table, ...)} where the table name is concatenated — medium</li>
  *   <li>a bare SQL-keyword string literal ({@code SELECT/INSERT/UPDATE/DELETE/WHERE ...}) assembled
  *       by concatenation, even when the sink is on another line — medium</li>
  * </ul>
@@ -66,15 +70,19 @@ public class SqlInjectionScanCommand extends AbstractCommand {
 	 * line is not a false positive.
 	 */
 	static final Pattern SQL_DYNAMIC_ARG = Pattern.compile(
-			"(?:rawQuery(?:WithFactory)?\\s*\\(|execSQL\\s*\\(|execPerConnectionSQL\\s*\\(|compileStatement\\s*\\(|\\.query(?:WithFactory)?\\s*\\()\\s*"
+			"(?:rawQuery(?:WithFactory)?\\s*\\(|execSQL\\s*\\(|execPerConnectionSQL\\s*\\(|compileStatement\\s*\\(|\\.query(?:WithFactory)?\\s*\\(|\\.delete\\s*\\(|\\.update\\s*\\(|\\.insert(?:OrThrow)?\\s*\\(|\\.replace\\s*\\()[^;]*?"
 					+ "(?:String\\.format|MessageFormat|new\\s+StringBuilder)"
-					+ "|(?:rawQuery(?:WithFactory)?\\s*\\(|execSQL\\s*\\(|execPerConnectionSQL\\s*\\(|compileStatement\\s*\\(|\\.query(?:WithFactory)?\\s*\\()[^;]*?"
+					+ "|(?:rawQuery(?:WithFactory)?\\s*\\(|execSQL\\s*\\(|execPerConnectionSQL\\s*\\(|compileStatement\\s*\\(|\\.query(?:WithFactory)?\\s*\\(|\\.delete\\s*\\(|\\.update\\s*\\(|\\.insert(?:OrThrow)?\\s*\\(|\\.replace\\s*\\()[^;]*?"
 					+ "\\.(?:concat|append)\\s*\\(");
 
 	private static final Pattern RAW_QUERY = Pattern.compile("rawQuery(WithFactory)?\\s*\\(");
 	private static final Pattern EXEC_SQL = Pattern.compile("execSQL\\s*\\(|execPerConnectionSQL\\s*\\(");
 	private static final Pattern COMPILE_STMT = Pattern.compile("compileStatement\\s*\\(");
 	private static final Pattern DB_QUERY = Pattern.compile("\\.query(WithFactory)?\\s*\\(");
+	/** {@code delete}/{@code update} — the whereClause (2nd/3rd arg) is a classic SQL-injection carrier. Package-private for testing. */
+	static final Pattern DB_DELETE_OR_UPDATE = Pattern.compile("\\.delete\\s*\\(|\\.update\\s*\\(");
+	/** {@code insert} — the table name (1st arg) is rarely concatenated; medium when it is. Package-private for testing. */
+	static final Pattern DB_INSERT = Pattern.compile("\\.insert\\s*\\(|\\.insertOrThrow\\s*\\(|\\.replace\\s*\\(");
 	private static final Pattern SQL_KEYWORD_LITERAL = Pattern.compile(
 			"(?i)\"[^\"]*\\b(select |insert into|update |delete from|drop table|drop |where | from )[^\"]*\"");
 
@@ -131,6 +139,12 @@ public class SqlInjectionScanCommand extends AbstractCommand {
 				} else if (DB_QUERY.matcher(line).find()) {
 					f = finding(fullName, ln, "sql_injection", "medium",
 							"SQLiteDatabase.query selection/args built with concatenation — pass a parameterized selection");
+				} else if (DB_DELETE_OR_UPDATE.matcher(line).find()) {
+					f = finding(fullName, ln, "sql_injection", "high",
+							"SQLiteDatabase.delete/update whereClause (or table) built with concatenation — use ? placeholders + whereArgs; the whereClause is a classic SQL-injection carrier");
+				} else if (DB_INSERT.matcher(line).find()) {
+					f = finding(fullName, ln, "sql_injection", "medium",
+							"SQLiteDatabase.insert/replace table name built with concatenation — verify the table name is never attacker-controlled");
 				} else if (SQL_KEYWORD_LITERAL.matcher(line).find()) {
 					f = finding(fullName, ln, "sql_string_concat", "medium",
 							"SQL statement string assembled via concatenation — verify it never reaches a query sink with untrusted input");

@@ -451,7 +451,7 @@ public class McpToolDefinitions {
 				optArg("limit", "integer", "Maximum number of findings", 300)));
 
 		tools.add(tool("jadx_sql_injection_scan",
-				"Scan SQLite code for SQL injection (MASVS MSTG-CODE): rawQuery/execSQL/compileStatement/SQLiteDatabase.query whose SQL is assembled by string concatenation instead of ? placeholders + selectionArgs. Scoped to SQLite-touching classes to keep signal high",
+				"Scan SQLite code for SQL injection (MASVS MSTG-CODE): rawQuery/execSQL/compileStatement/SQLiteDatabase.query/insert/replace and delete/update whereClause whose SQL is assembled by string concatenation or String.format/StringBuilder instead of ? placeholders + selectionArgs/whereArgs. Scoped to SQLite-touching classes to keep signal high",
 				optArg("package", "string", "Only scan classes under this package prefix", null),
 				optArg("limit", "integer", "Maximum number of findings", 300)));
 
