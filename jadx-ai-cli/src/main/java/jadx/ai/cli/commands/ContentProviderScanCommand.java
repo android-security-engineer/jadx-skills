@@ -58,16 +58,25 @@ public class ContentProviderScanCommand extends AbstractCommand {
 	private static final Pattern PROVIDER_MARKER = Pattern.compile(
 			"ContentProvider|extends\\s+ContentProvider");
 
-	private static final Pattern QUERY_METHOD = Pattern.compile(
-			"public\\s+Cursor\\s+query\\s*\\(");
-	private static final Pattern INSERT_METHOD = Pattern.compile(
-			"public\\s+Uri\\s+insert\\s*\\(");
-	private static final Pattern UPDATE_METHOD = Pattern.compile(
-			"public\\s+int\\s+update\\s*\\(");
-	private static final Pattern DELETE_METHOD = Pattern.compile(
-			"public\\s+int\\s+delete\\s*\\(");
-	private static final Pattern OPEN_FILE_METHOD = Pattern.compile(
-			"public\\s+ParcelFileDescriptor\\s+openFile\\s*\\(");
+	/**
+	 * ContentProvider CRUD / openFile method-signature anchors. jadx echoes {@code final}/{@code
+	 * synchronized}/{@code static} method modifiers (AccessInfo.makeString) between {@code public} and
+	 * the return type — a {@code public final Uri insert(...)} or {@code public synchronized Cursor
+	 * query(...)} override is common for providers that lock or seal their CRUD methods — so the bare
+	 * {@code public\s+ReturnType} form missed them and the method went unrecognised (losing
+	 * unvalidated_insert / sql_injection_provider / etc.). The {@code (?:final|synchronized|static)\s+*}
+	 * gap tolerates every modifier combo. Package-private for testing.
+	 */
+	static final Pattern QUERY_METHOD = Pattern.compile(
+			"public\\s+(?:(?:final|synchronized|static)\\s+)*Cursor\\s+query\\s*\\(");
+	static final Pattern INSERT_METHOD = Pattern.compile(
+			"public\\s+(?:(?:final|synchronized|static)\\s+)*Uri\\s+insert\\s*\\(");
+	static final Pattern UPDATE_METHOD = Pattern.compile(
+			"public\\s+(?:(?:final|synchronized|static)\\s+)*int\\s+update\\s*\\(");
+	static final Pattern DELETE_METHOD = Pattern.compile(
+			"public\\s+(?:(?:final|synchronized|static)\\s+)*int\\s+delete\\s*\\(");
+	static final Pattern OPEN_FILE_METHOD = Pattern.compile(
+			"public\\s+(?:(?:final|synchronized|static)\\s+)*ParcelFileDescriptor\\s+openFile\\s*\\(");
 
 	/** Caller validation patterns. */
 	private static final Pattern CALLER_CHECK = Pattern.compile(
