@@ -50,8 +50,79 @@ public class SearchCommand extends AbstractCommand {
 	@Option(names = { "--max-size" }, description = "Max resource file size in KB to search (default: 512)", defaultValue = "512")
 	protected int maxResourceSizeKB;
 
+	@Option(
+			names = { "--use-index" },
+			description = "Answer class/method/field/string searches from the on-disk symbol index "
+					+ "(built by `index build`) by streaming it, without loading the decompiler. "
+					+ "Falls back to a normal decompiler-backed search when no valid index exists."
+	)
+	protected boolean useIndex;
+
+	/**
+	 * When {@code --use-index} is set and a valid index exists for an index-backed search type, skip
+	 * loading the decompiler entirely — the search is answered by streaming the on-disk index files in
+	 * constant memory. Any other case falls through to the normal decompiler-backed path.
+	 */
+	@Override
+	protected boolean requiresDecompiler() {
+		return !canUseIndex();
+	}
+
+	private boolean canUseIndex() {
+		if (!useIndex || inputFile == null || searchType == null) {
+			return false;
+		}
+		String t = searchType.toLowerCase();
+		boolean indexable = t.equals("class") || t.equals("method") || t.equals("field") || t.equals("string");
+		if (!indexable) {
+			return false;
+		}
+		jadx.ai.cli.index.SymbolIndexStore store = indexStore();
+		if (!store.isValid()) {
+			return false;
+		}
+		return !t.equals("string") || store.hasStrings();
+	}
+
+	private jadx.ai.cli.index.SymbolIndexStore indexStore() {
+		return jadx.ai.cli.index.SymbolIndexStore.forInput(inputFile);
+	}
+
+	private boolean isIndexableType() {
+		if (searchType == null) {
+			return false;
+		}
+		String t = searchType.toLowerCase();
+		return t.equals("class") || t.equals("method") || t.equals("field") || t.equals("string");
+	}
+
+	/**
+	 * Persist the symbol index as a side-effect of a decompiler-backed run so subsequent invocations can
+	 * skip loading the decompiler. Best-effort: a failure here never affects the query result.
+	 */
+	private void autoBuildIndex(JadxDecompiler decompiler) {
+		try {
+			boolean needStrings = "string".equalsIgnoreCase(searchType);
+			jadx.ai.cli.index.SymbolIndexStore store = indexStore();
+			if (store.needsRebuild(needStrings)) {
+				store.build(decompiler, needStrings);
+			}
+		} catch (Exception e) {
+			// Index is an optimization; the query is still fully answered from the decompiler.
+		}
+	}
+
 	@Override
 	protected Object execute(JadxDecompiler decompiler) throws Exception {
+		if (decompiler == null) {
+			// Index fast-path: requiresDecompiler() returned false because a valid index is present.
+			return searchViaIndex();
+		}
+		// Auto-build on miss: when the caller asked for --use-index but none was usable, the decompiler
+		// loaded this once — persist the index now so every later open answers from disk with no load.
+		if (useIndex && inputFile != null && isIndexableType()) {
+			autoBuildIndex(decompiler);
+		}
 		switch (searchType.toLowerCase()) {
 			case "class":
 				return searchClasses(decompiler);
@@ -106,6 +177,92 @@ public class SearchCommand extends AbstractCommand {
 		}
 		return ignoreCase ? pkg.toLowerCase().contains(packageFilter.toLowerCase())
 				: pkg.contains(packageFilter);
+	}
+
+	private boolean matchesPackageStr(String pkg) {
+		if (packageFilter == null) {
+			return true;
+		}
+		if (pkg == null) {
+			return false;
+		}
+		return ignoreCase ? pkg.toLowerCase().contains(packageFilter.toLowerCase())
+				: pkg.contains(packageFilter);
+	}
+
+	private static String pkgOf(String classFullName) {
+		if (classFullName == null) {
+			return "";
+		}
+		int dot = classFullName.lastIndexOf('.');
+		return dot > 0 ? classFullName.substring(0, dot) : "";
+	}
+
+	/**
+	 * Answer the search by streaming the on-disk symbol index (no decompiler loaded). Column layouts
+	 * mirror {@link jadx.ai.cli.index.SymbolIndexStore#build}: class = [full, simple, pkg, raw],
+	 * method = [class, name, returnType, fullId], field = [class, name, type, raw], string = [class, literal].
+	 */
+	private Object searchViaIndex() throws Exception {
+		jadx.ai.cli.index.SymbolIndexStore store = indexStore();
+		String t = searchType.toLowerCase();
+		switch (t) {
+			case "class": {
+				List<ClassSearchResult> out = new ArrayList<>();
+				// c[4] = isInner; exclude inners to match the decompiler path (getClasses() is top-level only).
+				for (var row : store.query(jadx.ai.cli.index.SymbolIndexStore.Kind.CLASS,
+						c -> !"true".equals(c[4]) && matchesPackageStr(c[2])
+								&& (matches(c[0]) || matches(c[1]) || matches(c[3])),
+						limit)) {
+					ClassSearchResult r = new ClassSearchResult();
+					r.fullName = row.col(0);
+					r.simpleName = row.col(1);
+					r.packageName = row.col(2);
+					r.rawName = row.col(3);
+					out.add(r);
+				}
+				return JsonOutput.list(out);
+			}
+			case "method": {
+				List<MethodSearchResult> out = new ArrayList<>();
+				for (var row : store.query(jadx.ai.cli.index.SymbolIndexStore.Kind.METHOD,
+						c -> matchesPackageStr(pkgOf(c[0])) && (matches(c[1]) || matches(c[3])), limit)) {
+					MethodSearchResult r = new MethodSearchResult();
+					r.className = row.col(0);
+					r.methodName = row.col(1);
+					r.returnType = row.col(2);
+					r.fullId = row.col(3);
+					out.add(r);
+				}
+				return JsonOutput.list(out);
+			}
+			case "field": {
+				List<FieldSearchResult> out = new ArrayList<>();
+				for (var row : store.query(jadx.ai.cli.index.SymbolIndexStore.Kind.FIELD,
+						c -> matchesPackageStr(pkgOf(c[0])) && (matches(c[1]) || matches(c[3])), limit)) {
+					FieldSearchResult r = new FieldSearchResult();
+					r.className = row.col(0);
+					r.fieldName = row.col(1);
+					r.type = row.col(2);
+					r.rawName = row.col(3);
+					out.add(r);
+				}
+				return JsonOutput.list(out);
+			}
+			case "string": {
+				List<StringSearchResult> out = new ArrayList<>();
+				for (var row : store.query(jadx.ai.cli.index.SymbolIndexStore.Kind.STRING,
+						c -> matchesPackageStr(pkgOf(c[0])) && matches(c[1]), limit)) {
+					StringSearchResult r = new StringSearchResult();
+					r.className = row.col(0);
+					r.matchingLine = row.col(1);
+					out.add(r);
+				}
+				return JsonOutput.list(out);
+			}
+			default:
+				return JsonOutput.error("IndexUnsupported", "Index search not supported for type: " + t);
+		}
 	}
 
 	private Object searchClasses(JadxDecompiler decompiler) {
@@ -409,6 +566,7 @@ public class SearchCommand extends AbstractCommand {
 			args.put("resourceType", resourceTypeFilter);
 		}
 		args.put("maxSize", maxResourceSizeKB);
+		args.put("useIndex", useIndex);
 		return args;
 	}
 

@@ -23,6 +23,20 @@ dependencies {
 	implementation("org.slf4j:slf4j-api:2.0.9")
 	runtimeOnly("ch.qos.logback:logback-classic:1.4.11")
 
+	// Input plugins — without these, jadx loads 0 classes from .dex/.apk/etc.
+	// Mirrors jadx-cli so every supported container format is parseable.
+	runtimeOnly(project(":jadx-plugins:jadx-dex-input"))
+	runtimeOnly(project(":jadx-plugins:jadx-java-input"))
+	runtimeOnly(project(":jadx-plugins:jadx-java-convert"))
+	runtimeOnly(project(":jadx-plugins:jadx-smali-input"))
+	runtimeOnly(project(":jadx-plugins:jadx-rename-mappings"))
+	runtimeOnly(project(":jadx-plugins:jadx-kotlin-metadata"))
+	runtimeOnly(project(":jadx-plugins:jadx-kotlin-source-debug-extension"))
+	runtimeOnly(project(":jadx-plugins:jadx-xapk-input"))
+	runtimeOnly(project(":jadx-plugins:jadx-aab-input"))
+	runtimeOnly(project(":jadx-plugins:jadx-apkm-input"))
+	runtimeOnly(project(":jadx-plugins:jadx-apks-input"))
+
 	testImplementation("org.junit.jupiter:junit-jupiter:5.10.1")
 }
 

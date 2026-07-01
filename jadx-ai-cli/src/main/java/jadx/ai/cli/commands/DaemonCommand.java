@@ -9,6 +9,7 @@ import picocli.CommandLine.Parameters;
 import jadx.ai.cli.daemon.DaemonClient;
 import jadx.ai.cli.daemon.DaemonProtocol;
 import jadx.ai.cli.output.JsonOutput;
+import jadx.api.JadxDecompiler;
 
 @Command(name = "daemon", description = "Manage the JADX AI daemon for index reuse")
 public class DaemonCommand extends AbstractCommand {
@@ -49,7 +50,7 @@ public class DaemonCommand extends AbstractCommand {
 			String classpath = System.getProperty("java.class.path");
 			ProcessBuilder pb = new ProcessBuilder(javaBin, "-cp", classpath,
 					"-Djadx.daemon.port=" + port,
-					"-Djadx.daemon.input=" + getInputFile().getAbsolutePath(),
+					"-Djadx.daemon.input=" + inputFile.getAbsolutePath(),
 					"jadx.ai.cli.daemon.DaemonServer");
 			pb.redirectErrorStream(true);
 			pb.start();

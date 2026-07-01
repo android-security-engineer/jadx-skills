@@ -33,7 +33,7 @@ public class GraphCommand extends AbstractCommand {
 	@Option(names = {"-d", "--depth"}, description = "Max traversal depth", defaultValue = "3")
 	protected int depth;
 
-	@Option(names = {"--format"}, description = "Output format: json, mermaid, dot", defaultValue = "json")
+	@Option(names = {"--graph-format"}, description = "Graph serialization: json, mermaid, dot", defaultValue = "json")
 	protected String outputFormat;
 
 	@Override

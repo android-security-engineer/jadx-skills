@@ -11,7 +11,6 @@ import picocli.CommandLine.Option;
 import jadx.ai.cli.output.JsonOutput;
 import jadx.api.JadxDecompiler;
 import jadx.api.JavaClass;
-import jadx.api.ResourceFile;
 
 @Command(name = "navigate", description = "Navigate to APK entry points and key components")
 public class NavigateCommand extends AbstractCommand {
@@ -118,16 +117,7 @@ public class NavigateCommand extends AbstractCommand {
 	}
 
 	private String loadManifestContent(JadxDecompiler decompiler) throws Exception {
-		for (ResourceFile res : decompiler.getResources()) {
-			String name = res.getOriginalName();
-			if (name != null && name.contains("AndroidManifest.xml")) {
-				var container = res.loadContent();
-				if (container != null) {
-					return container.getText().toString();
-				}
-			}
-		}
-		return null;
+		return jadx.ai.cli.util.ManifestUtil.loadManifestText(decompiler);
 	}
 
 	private String extractByPattern(String text, String regex, boolean extractGroup) {

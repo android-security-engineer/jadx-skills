@@ -24,7 +24,7 @@ public class CfgCommand extends AbstractCommand {
     @Option(names = {"--cfg-type"}, description = "CFG type: basic, raw, region", defaultValue = "basic")
     protected String cfgType;
 
-    @Option(names = {"--format"}, description = "Output format: dot, text", defaultValue = "dot")
+    @Option(names = {"--cfg-format"}, description = "CFG serialization: dot, text", defaultValue = "dot")
     protected String outputFormat;
 
     @Override

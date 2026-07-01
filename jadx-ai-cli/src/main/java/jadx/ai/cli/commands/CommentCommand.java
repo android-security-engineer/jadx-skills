@@ -84,7 +84,7 @@ public class CommentCommand extends AbstractCommand {
 		List<Map<String, Object>> annotations = new ArrayList<>();
 		var metadata = codeInfo.getCodeMetadata();
 		if (metadata != null) {
-			for (var entry : metadata) {
+			for (var entry : metadata.getAsMap().entrySet()) {
 				Map<String, Object> ann = new HashMap<>();
 				ann.put("position", entry.getKey());
 				Object value = entry.getValue();
@@ -112,7 +112,7 @@ public class CommentCommand extends AbstractCommand {
 		List<Map<String, Object>> matching = new ArrayList<>();
 		var metadata = codeInfo.getCodeMetadata();
 		if (metadata != null) {
-			for (var entry : metadata) {
+			for (var entry : metadata.getAsMap().entrySet()) {
 				Object value = entry.getValue();
 				if (value != null && value.toString().toLowerCase().contains(keyword.toLowerCase())) {
 					Map<String, Object> ann = new HashMap<>();

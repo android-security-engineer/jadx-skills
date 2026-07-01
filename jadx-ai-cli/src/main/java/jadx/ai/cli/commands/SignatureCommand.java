@@ -63,38 +63,62 @@ public class SignatureCommand extends AbstractCommand {
             result.put("warnings", warnings);
 
             List<Map<String, Object>> signers = new ArrayList<>();
-            collectSigners(verifyResult.getV1SchemeSigners(), "V1", signers);
-            collectSigners(verifyResult.getV2SchemeSigners(), "V2", signers);
-            collectSigners(verifyResult.getV3SchemeSigners(), "V3", signers);
-            collectSigners(verifyResult.getV31SchemeSigners(), "V3.1", signers);
+            collectV1Signers(verifyResult.getV1SchemeSigners(), "V1", signers);
+            collectV2Signers(verifyResult.getV2SchemeSigners(), "V2", signers);
+            collectV3Signers(verifyResult.getV3SchemeSigners(), "V3", signers);
+            collectV3Signers(verifyResult.getV31SchemeSigners(), "V3.1", signers);
             result.put("signers", signers);
         }
 
         return JsonOutput.ok(result);
     }
 
-    private void collectSigners(List<? extends ApkVerifier.SignerInfo> signerInfos, String scheme, List<Map<String, Object>> signers) {
-        for (ApkVerifier.SignerInfo info : signerInfos) {
-            Map<String, Object> signer = new HashMap<>();
-            signer.put("scheme", scheme);
+    // apksig has no common SignerInfo supertype across schemes, so collect each variant
+    // explicitly. V1 signers are identified by name, V2/V3 by index.
+    private void collectV1Signers(List<ApkVerifier.Result.V1SchemeSignerInfo> signerInfos, String scheme,
+            List<Map<String, Object>> signers) {
+        for (ApkVerifier.Result.V1SchemeSignerInfo info : signerInfos) {
+            Map<String, Object> signer = newSigner(scheme, info.getCertificate(), info.getErrors());
             if (info.getName() != null) {
                 signer.put("name", info.getName());
             }
-            if (info.getIndex() >= 0) {
-                signer.put("index", info.getIndex());
-            }
-            if (info.getCertificate() instanceof X509Certificate) {
-                signer.put("certificate", extractCertInfo((X509Certificate) info.getCertificate()));
-            }
-            List<String> signerErrors = new ArrayList<>();
-            for (ApkVerifier.IssueWithParams err : info.getErrors()) {
-                signerErrors.add(err.getIssue().name() + ": " + err.toString());
-            }
-            if (!signerErrors.isEmpty()) {
-                signer.put("errors", signerErrors);
-            }
             signers.add(signer);
         }
+    }
+
+    private void collectV2Signers(List<ApkVerifier.Result.V2SchemeSignerInfo> signerInfos, String scheme,
+            List<Map<String, Object>> signers) {
+        for (ApkVerifier.Result.V2SchemeSignerInfo info : signerInfos) {
+            Map<String, Object> signer = newSigner(scheme, info.getCertificate(), info.getErrors());
+            signer.put("index", info.getIndex());
+            signers.add(signer);
+        }
+    }
+
+    private void collectV3Signers(List<ApkVerifier.Result.V3SchemeSignerInfo> signerInfos, String scheme,
+            List<Map<String, Object>> signers) {
+        for (ApkVerifier.Result.V3SchemeSignerInfo info : signerInfos) {
+            Map<String, Object> signer = newSigner(scheme, info.getCertificate(), info.getErrors());
+            signer.put("index", info.getIndex());
+            signers.add(signer);
+        }
+    }
+
+    private Map<String, Object> newSigner(String scheme, X509Certificate cert,
+            List<ApkVerifier.IssueWithParams> errors) {
+        Map<String, Object> signer = new HashMap<>();
+        signer.put("scheme", scheme);
+        if (cert != null) {
+            signer.put("certificate", extractCertInfo(cert));
+        }
+        if (errors != null && !errors.isEmpty()) {
+            List<String> signerErrors = new ArrayList<>();
+            for (ApkVerifier.IssueWithParams err : errors) {
+                signerErrors.add(err.getIssue().name() + ": " + err.toString());
+            }
+            signer.put("errors", signerErrors);
+        }
+        return signer;
     }
 
     private Map<String, Object> extractCertInfo(X509Certificate cert) {
