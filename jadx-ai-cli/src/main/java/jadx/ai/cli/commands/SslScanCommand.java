@@ -47,8 +47,14 @@ public class SslScanCommand extends AbstractCommand {
 			"checkServerTrusted\\s*\\([^)]*\\)\\s*(?:throws[\\w\\s,.]*?)?\\{\\s*\\}", Pattern.DOTALL);
 	private static final Pattern EMPTY_CHECK_CLIENT = Pattern.compile(
 			"checkClientTrusted\\s*\\([^)]*\\)\\s*(?:throws[\\w\\s,.]*?)?\\{\\s*\\}", Pattern.DOTALL);
-	private static final Pattern ACCEPTED_ISSUERS_NULL = Pattern.compile(
-			"getAcceptedIssuers\\s*\\(\\s*\\)\\s*\\{\\s*return\\s+(?:null|new\\s+X509Certificate\\s*\\[\\s*0\\s*\\])", Pattern.DOTALL);
+	// getAcceptedIssuers() returning null or an empty array — the companion of a trust-all
+	// TrustManager. Covers the `return null` form, the `new X509Certificate[0]` sized form, and the
+	// `new X509Certificate[]{}` empty-array-initializer form (a common trust-all idiom the sized form
+	// alone missed). Package-private so a test can assert all three forms fire.
+	static final Pattern ACCEPTED_ISSUERS_NULL = Pattern.compile(
+			"getAcceptedIssuers\\s*\\(\\s*\\)\\s*\\{\\s*return\\s+(?:null"
+					+ "|new\\s+X509Certificate\\s*\\[\\s*0\\s*\\]"
+					+ "|new\\s+X509Certificate\\s*\\[\\s*\\]\\s*\\{\\s*\\})", Pattern.DOTALL);
 
 	// The declaration head of a trust-manager callback, up to the ')' of its parameter list. Used to
 	// locate the body via balanced-brace matching so we can inspect a NON-empty body that the
