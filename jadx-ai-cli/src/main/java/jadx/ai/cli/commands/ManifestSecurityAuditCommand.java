@@ -48,10 +48,14 @@ public class ManifestSecurityAuditCommand extends AbstractCommand {
 	};
 
 	private static final Pattern PERM_PATTERN = Pattern.compile("uses-permission[^>]+android:name=\"([^\"]+)\"");
-	private static final Pattern ACTIVITY_PATTERN = Pattern.compile("activity[^>]+android:name=\"([^\"]+)\"");
-	private static final Pattern SERVICE_PATTERN = Pattern.compile("service[^>]+android:name=\"([^\"]+)\"");
-	private static final Pattern RECEIVER_PATTERN = Pattern.compile("receiver[^>]+android:name=\"([^\"]+)\"");
-	private static final Pattern PROVIDER_PATTERN = Pattern.compile("provider[^>]+android:name=\"([^\"]+)\"");
+	// `<activity` not followed by `-alias`, then a word boundary — so <activity-alias> is NOT matched as
+	// an activity. `activity` is a prefix of `activity-alias`, and `\b` alone still matches at the
+	// `y`/`-` boundary, so the `(?!-alias)` lookahead is required. activity-alias has its own type below.
+	static final Pattern ACTIVITY_PATTERN = Pattern.compile("<activity(?!-alias)\\b[^>]*android:name=\"([^\"]+)\"");
+	static final Pattern ACTIVITY_ALIAS_PATTERN = Pattern.compile("<activity-alias\\b[^>]*android:name=\"([^\"]+)\"");
+	private static final Pattern SERVICE_PATTERN = Pattern.compile("<service\\b[^>]*android:name=\"([^\"]+)\"");
+	private static final Pattern RECEIVER_PATTERN = Pattern.compile("<receiver\\b[^>]*android:name=\"([^\"]+)\"");
+	private static final Pattern PROVIDER_PATTERN = Pattern.compile("<provider\\b[^>]*android:name=\"([^\"]+)\"");
 	private static final Pattern EXPORTED_TRUE = Pattern.compile("android:exported=\"true\"");
 	private static final Pattern INTENT_FILTER = Pattern.compile("<intent-filter");
 	private static final Pattern ACTION_NAME = Pattern.compile("<action[^>]+android:name=\"([^\"]+)\"");
@@ -124,7 +128,7 @@ public class ManifestSecurityAuditCommand extends AbstractCommand {
 
 		// ── 3. Exported Components ──
 		List<Map<String, Object>> exportedFindings = new ArrayList<>();
-		String[] componentTypes = {"activity", "service", "receiver", "provider"};
+		String[] componentTypes = {"activity", "activity-alias", "service", "receiver", "provider"};
 		for (String type : componentTypes) {
 			Pattern compPat = getComponentPattern(type);
 			Matcher cm = compPat.matcher(manifestXml);
@@ -199,6 +203,7 @@ public class ManifestSecurityAuditCommand extends AbstractCommand {
 	private Pattern getComponentPattern(String type) {
 		switch (type) {
 			case "activity": return ACTIVITY_PATTERN;
+			case "activity-alias": return ACTIVITY_ALIAS_PATTERN;
 			case "service": return SERVICE_PATTERN;
 			case "receiver": return RECEIVER_PATTERN;
 			case "provider": return PROVIDER_PATTERN;
@@ -206,26 +211,43 @@ public class ManifestSecurityAuditCommand extends AbstractCommand {
 		}
 	}
 
-	private int findComponentEnd(String xml, int start) {
+	/**
+	 * Index just past the end of the component element starting at {@code start}. A self-closing
+	 * component ({@code <activity .../>}) ends at its own {@code >}; a block component
+	 * ({@code <activity ...>...</activity>}) ends after its matching close tag, honouring nested
+	 * children. Package-private so a test can assert the self-closing form does not overreach into the
+	 * next component (which would cross-attribute exported/intent-filter flags).
+	 */
+	static int findComponentEnd(String xml, int start) {
 		int depth = 0;
 		for (int i = start; i < xml.length(); i++) {
-			if (xml.charAt(i) == '<') {
-				if (i + 1 < xml.length() && xml.charAt(i + 1) == '/') {
-					depth--;
-					if (depth <= 0) {
-						int end = xml.indexOf('>', i);
-						return end > 0 ? end + 1 : xml.length();
-					}
-				} else if (!xml.substring(i).startsWith("<!--")) {
-					// Self-closing check
-					int closePos = xml.indexOf('>', i);
-					if (closePos > 0 && xml.charAt(closePos - 1) == '/') {
-						// Self-closing tag, no depth change
-						continue;
-					}
-					depth++;
-				}
+			if (xml.charAt(i) != '<') {
+				continue;
 			}
+			if (i + 1 < xml.length() && xml.charAt(i + 1) == '/') {
+				depth--;
+				if (depth <= 0) {
+					int end = xml.indexOf('>', i);
+					return end > 0 ? end + 1 : xml.length();
+				}
+				continue;
+			}
+			if (xml.substring(i).startsWith("<!--")) {
+				continue;
+			}
+			int closePos = xml.indexOf('>', i);
+			if (closePos < 0) {
+				return xml.length();
+			}
+			if (xml.charAt(closePos - 1) == '/') {
+				// Self-closing tag. If this is the component's opening tag (depth == 0), the component
+				// ends right here — previously this `continue`d past it, absorbing following components.
+				if (depth == 0) {
+					return closePos + 1;
+				}
+				continue;
+			}
+			depth++;
 		}
 		return xml.length();
 	}
