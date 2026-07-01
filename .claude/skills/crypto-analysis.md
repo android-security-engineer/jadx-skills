@@ -13,99 +13,79 @@ When you need to audit an app's cryptographic implementation: find encryption/de
 
 ## Workflow Steps
 
-### Step 1: Identify Crypto Primitives
+### Step 1: Run the native crypto scanners
+
+These implement the marker-gate + per-line rule pattern over jadx's parsed model — far
+more accurate than grepping for `"AES"`. Each returns `{findings, count, highSeverityCount,
+...summaryFlags}`. Run them all, then triage by `highSeverityCount`.
 
 ```bash
-# Java Crypto API classes
-jadx-ai search -t class -q "Cipher" <apk>
-jadx-ai search -t class -q "MessageDigest" <apk>
-jadx-ai search -t class -q "Mac" <apk>
-jadx-ai search -t class -q "Signature" <apk>
-jadx-ai search -t class -q "SecretKey" <apk>
-jadx-ai search -t class -q "KeyPairGenerator" <apk>
-jadx-ai search -t class -q "KeyStore" <apk>
+# Weak ciphers, ECB/implicit-ECB, weak hashes/MACs, hardcoded keys, static IVs, insecure RNG
+jadx-ai crypto-scan <apk>
 
-# Algorithm-specific searches
-jadx-ai search -t string -q "AES" <apk>
-jadx-ai search -t string -q "RSA" <apk>
-jadx-ai search -t string -q "DES" <apk>
-jadx-ai search -t string -q "MD5" <apk>
-jadx-ai search -t string -q "SHA-1" <apk>
-jadx-ai search -t string -q "HmacSHA" <apk>
-jadx-ai search -t string -q "ECB" <apk>
-jadx-ai search -t string -q "CBC" <apk>
-jadx-ai search -t string -q "GCM" <apk>
+# Broader crypto API misuse (complementary to crypto-scan)
+jadx-ai cryptographic-misuse-scan <apk>
 
-# Method names
-jadx-ai search -t method -q "encrypt" <apk>
-jadx-ai search -t method -q "decrypt" <apk>
-jadx-ai search -t method -q "digest" <apk>
-jadx-ai search -t method -q "sign" <apk>
-jadx-ai search -t method -q "verify" <apk>
-jadx-ai search -t method -q "initCipher" <apk>
-jadx-ai search -t method -q "doFinal" <apk>
+# Hardcoded keys/IVs/salts specifically
+jadx-ai hardcoded-crypto-scan <apk>
+
+# Unsafe encryption patterns
+jadx-ai unsafe-encryption-scan <apk>
+
+# AndroidKeyStore posture: key-no-user-auth, no-StrongBox, randomized-encryption-off
+jadx-ai keystore-scan <apk>
+jadx-ai insecure-keystore-scan <apk>
+
+# Tokens (JWT/OAuth) stored in plaintext
+jadx-ai token-storage-scan <apk>
+
+# Certificate pinning posture (OkHttp/TrustKit/NSC/custom TrustManager)
+jadx-ai cert-pinning-scan <apk>
+jadx-ai ssl-scan <apk>            # the inverse: trust-all TM/Verifier → MITM
+
+# Native crypto constants in bundled .so (AES S-box, RC4, MD5/SHA-256 init)
+jadx-ai native-lib-security <apk>
 ```
 
-### Step 2: Decompile Crypto Classes
+The checklist below maps directly to what these scanners detect automatically — use the
+scanners, then manually confirm the findings by decompiling.
 
-For each crypto class found:
+### Step 2: Decompile the flagged crypto classes
+
+For each class a scanner flags, pivot to the source:
 ```bash
 jadx-ai decompile -c <crypto-class> <apk>
-
-# If class has inners/anonymous classes
 jadx-ai decompile -c <crypto-class> --with-inners <apk>
-
-# Get class structure first
 jadx-ai class-detail -c <crypto-class> <apk>
+
+# Smali ground truth when the Java looks wrong (e.g. jadx dropped a block)
+jadx-ai smali -c <crypto-class> <apk>
 ```
 
-### Step 3: Trace Key Management
+### Step 3: Trace key management & data flow
 
 ```bash
-# How are keys created?
-jadx-ai search -t method -q "generateKey" <apk>
-jadx-ai search -t method -q "getKey" <apk>
-jadx-ai search -t method -q "getSecret" <apk>
+# Every caller of a key/crypto API (method-level, incl. framework APIs)
+jadx-ai call-sites -m getSecretKey <apk>
+jadx-ai call-sites -m doFinal <apk>
 
-# Where are keys stored?
-jadx-ai search -t string -q "KeyStore" <apk>
-jadx-ai search -t string -q "AndroidKeyStore" <apk>
-jadx-ai search -t class -q "SharedPreferences" <apk>
+# Where is a hardcoded key literal used?
+jadx-ai string-xref -q '<key-bytes-or-string>' <apk>
 
-# Are keys hardcoded?
-jadx-ai search -t string -q "0x" <apk>
-# Look for byte arrays in decompiled code: new byte[] { 0x... }
-```
-
-### Step 4: Analyze Call Chains
-
-For each crypto method:
-```bash
 # Who calls this crypto method? (upstream)
 jadx-ai usage -c <crypto-class> -m <crypto-method> -t useIn --depth 3 <apk>
 
 # What does the crypto method use? (downstream)
 jadx-ai usage -c <crypto-class> -m <crypto-method> -t used --depth 3 <apk>
 
-# Generate call graph
 jadx-ai graph -t call -c <crypto-class> -m <crypto-method> --depth 5 <apk>
 ```
 
-### Step 5: Check for IV/Nonce Handling
+### Step 4: Generate dynamic analysis hooks
 
 ```bash
-jadx-ai search -t method -q "IvParameterSpec" <apk>
-jadx-ai search -t string -q "GCMParameterSpec" <apk>
-jadx-ai search -t method -q "updateAAD" <apk>
-```
-
-### Step 6: Generate Dynamic Analysis Hooks
-
-```bash
-# Hook crypto operations at runtime
+# Hook crypto operations at runtime to capture keys/plaintext
 jadx-ai hook -t frida -c <crypto-class> -m <crypto-method> <apk>
-
-# Hook key generation
 jadx-ai hook -t frida -c <key-class> -m <key-method> <apk>
 ```
 
