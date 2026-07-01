@@ -67,10 +67,17 @@ public class UnsafeEncryptionScanCommand extends AbstractCommand {
 					+ "private.*decrypt\\s*\\(|public.*decrypt\\s*\\(|"
 					+ "customEncrypt|customDecrypt|myEncrypt|simpleEncrypt|"
 					+ "doEncrypt\\s*\\(|doDecrypt\\s*\\(");
-	private static final Pattern XOR_ENCRYPTION = Pattern.compile(
+	/**
+	 * XOR-based "encryption". Covers literal-key ({@code ^ 0x..}), named-key ({@code ^ key}), named-
+	 * routine ({@code xorEncrypt}/{@code XORCipher}) and byte-cast ({@code (byte)(a ^ b)}) forms.
+	 * Also matches the array-index self-XOR {@code arr[i] ^= key[j]} — the most common decompiled
+	 * shape of an XOR stream-cipher loop, which the {@code byte.*\^.*byte} term missed. Package-private.
+	 */
+	static final Pattern XOR_ENCRYPTION = Pattern.compile(
 			"\\^\\s*0x[0-9a-fA-F]|\\^\\s*key\\b|\\^\\s*secretKey|"
 					+ "XOR.*encrypt|xorEncrypt|XORCipher|"
-					+ "simpleXor|\\^\\s*\\(\\s*byte|byte.*\\^.*byte");
+					+ "simpleXor|\\^\\s*\\(\\s*byte|byte.*\\^.*byte|"
+					+ "\\b\\w+\\s*\\[[^]]*\\]\\s*\\^=");
 	private static final Pattern RC4_USAGE = Pattern.compile(
 			"RC4|ARCFOUR|Arcfour|rc4|RC4Cipher|"
 					+ "\"RC4\"|ARC4");
