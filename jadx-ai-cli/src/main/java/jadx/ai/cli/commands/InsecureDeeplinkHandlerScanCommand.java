@@ -61,11 +61,38 @@ public class InsecureDeeplinkHandlerScanCommand extends AbstractCommand {
 					+ "getQueryParameter|getPath|getScheme|getHost|"
 					+ "deeplink|deep_link|deepLink");
 
-	private static final Pattern PATH_TRAVERSAL = Pattern.compile(
-			"getData.*File\\s*\\(|getData.*FileInputStream|getData.*openFile|"
-					+ "getPath.*File\\s*\\(|getQueryParameter.*File|"
-					+ "uri.*File\\s*\\(|uri\\.getPath.*File|"
-					+ "getData.*OutputStream|getData.*writeFile");
+	/**
+	 * Deep-link untrusted-URI source — matched at <b>class scope</b>: a real deep-link handler reads
+	 * the URI ({@code getData()}/{@code getQueryParameter()}/{@code getPath()}) on one line and performs
+	 * the file/SQL/WebView operation on another, so a same-line {@code source.*sink} AND would miss the
+	 * common form. Package-private so a test can assert the cross-line fix.
+	 */
+	static final Pattern DEEPLINK_SOURCE = Pattern.compile(
+			"getData\\s*\\(|getQueryParameter\\s*\\(|\\.getPath\\s*\\(|\\.getScheme\\s*\\(|"
+					+ "\\.getHost\\s*\\(|getUri\\s*\\(|parseUri\\s*\\(|getDataString\\s*\\(");
+
+	/**
+	 * File-operation sink — matched <b>per line</b> for the {@code lineNumber} anchor. The
+	 * {@code deeplink_path_traversal} finding fires on the first FILE_SINK line of a class that also
+	 * has a {@link #DEEPLINK_SOURCE} and no {@link #DEEPLINK_CANONICAL_GUARD}. Package-private for testing.
+	 */
+	static final Pattern FILE_SINK = Pattern.compile(
+			"new\\s+File\\s*\\(|new\\s+FileInputStream\\s*\\(|new\\s+FileOutputStream\\s*\\(|"
+					+ "openFile\\s*\\(|\\.writeFile|new\\s+OutputStream\\s*\\(");
+
+	/** A path-canonicalization guard — its presence means the class defends against traversal. */
+	static final Pattern DEEPLINK_CANONICAL_GUARD = Pattern.compile(
+			"getCanonicalPath|getCanonicalFile|CanonicalPath|Files\\.canonicalize|\\.normalize\\s*\\(");
+
+	/**
+	 * True iff the line is a file sink and the class both takes a deep-link URI and does not canonicalize
+	 * paths — the cross-line deeplink_path_traversal signal. Package-private for testing.
+	 */
+	static boolean deeplinkPathTraversalSignal(boolean classHasSource, boolean classGuardsPath, String line) {
+		return classHasSource && !classGuardsPath
+				&& line != null && FILE_SINK.matcher(line).find();
+	}
+
 	private static final Pattern SQL_INJECTION = Pattern.compile(
 			"getQueryParameter.*rawQuery|getQueryParameter.*execSQL|"
 					+ "getQueryParameter.*query\\s*\\(|getData.*rawQuery|"
@@ -102,10 +129,9 @@ public class InsecureDeeplinkHandlerScanCommand extends AbstractCommand {
 	}
 
 	private static final Rule[] RULES = {
-		new Rule(PATH_TRAVERSAL, "deeplink_path_traversal", "high",
-				"Deep-link URI used in file operations — path traversal via crafted "
-						+ "URL path (e.g. myapp://host/../../../data); validate and "
-						+ "canonicalize paths before file access"),
+		// deeplink_path_traversal is handled separately (class-scoped DEEPLINK_SOURCE ∧ per-line
+		// FILE_SINK) — see deeplinkPathTraversalSignal below — because jadx decompiles the source and
+		// the file sink onto different lines, which a same-line .* AND would miss.
 		new Rule(SQL_INJECTION, "deeplink_sql_injection", "high",
 				"Deep-link parameter used in SQL — SQL injection via crafted URL "
 						+ "parameters; use parameterized queries (selectionArgs)"),
@@ -156,11 +182,35 @@ public class InsecureDeeplinkHandlerScanCommand extends AbstractCommand {
 				continue;
 			}
 
+			// DEEPLINK_SOURCE and the canonical-path guard are matched at CLASS scope: a real handler
+			// reads the URI on one line and opens the file on another, so a same-line source.*sink AND
+			// would miss it. The FILE_SINK line stays the per-line anchor for lineNumber.
+			boolean classHasDeepLinkSource = DEEPLINK_SOURCE.matcher(code).find();
+			boolean classGuardsPath = DEEPLINK_CANONICAL_GUARD.matcher(code).find();
+
 			// Per-line rule detection (first-match-wins, ONE/class per kind)
 			TreeSet<String> reportedKinds = new TreeSet<>();
+			boolean reportedPathTraversal = false;
 			String[] lines = code.split("\n", -1);
 			for (int i = 0; i < lines.length && findings.size() < limit; i++) {
 				String line = lines[i];
+
+				// Class-scoped deeplink_path_traversal: first FILE_SINK line of a class that takes a
+				// deep-link URI and does not canonicalize. Covers both the same-line and the cross-line
+				// (Uri data = getIntent().getData(); ... new File(data.getPath())) forms.
+				if (!reportedPathTraversal
+						&& deeplinkPathTraversalSignal(classHasDeepLinkSource, classGuardsPath, line)) {
+					findings.add(finding("deeplink_path_traversal", "high", fullName, i + 1,
+							"Deep-link URI used in file operations — path traversal via crafted "
+									+ "URL path (e.g. myapp://host/../../../data); validate and "
+									+ "canonicalize paths before file access"));
+					reportedPathTraversal = true;
+					reportedKinds.add("deeplink_path_traversal");
+					highSeverityCount++;
+					hasPathTraversal = true;
+					continue;
+				}
+
 				for (Rule r : RULES) {
 					if (!reportedKinds.contains(r.kind) && r.pattern.matcher(line).find()) {
 						findings.add(finding(r.kind, r.severity, fullName, i + 1, r.detail));
