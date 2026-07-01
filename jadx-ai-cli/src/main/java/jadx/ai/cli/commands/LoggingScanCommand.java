@@ -30,7 +30,8 @@ import jadx.api.JavaClass;
  *       {@code credential}, {@code session}, {@code cookie}, {@code jwt}, {@code pin}, {@code ssn},
  *       {@code creditcard}/{@code cardnumber}, {@code cvv}, {@code auth}) — high; or it logs a
  *       known device identifier getter ({@code getDeviceId}, {@code getImei}, {@code getSubscriberId},
- *       {@code getSimSerialNumber}, {@code getMacAddress}, {@code getAndroidId}) — medium (PII).</li>
+ *       {@code getSimSerialNumber}, {@code getMacAddress}, {@code getAndroidId},
+ *       {@code Build.getSerial()} / {@code Build.SERIAL}) — medium (PII).</li>
  *   <li>A {@code printStackTrace()} with no sensitivity match — low (information disclosure / noise,
  *       should use a logging framework gated by {@code BuildConfig.DEBUG}).</li>
  * </ul>
@@ -58,8 +59,20 @@ public class LoggingScanCommand extends AbstractCommand {
 	private static final Pattern SENSITIVE = Pattern.compile(
 			"(?i)(password|passwd|secret|api[_-]?key|private[_-]?key|credential|session|cookie|\\bjwt\\b|\\btoken\\b|\\bpin\\b|\\bssn\\b|credit[_-]?card|card[_-]?number|\\bcvv\\b|auth(oriz|entic)|access[_-]?token|refresh[_-]?token|bearer)");
 
-	private static final Pattern PII_GETTER = Pattern.compile(
-			"getDeviceId\\s*\\(|getImei\\s*\\(|getSubscriberId\\s*\\(|getSimSerialNumber\\s*\\(|getMacAddress\\s*\\(|getAndroidId\\s*\\(|getLine1Number\\s*\\(");
+	/**
+	 * Device-identifier getters whose value logged to logcat is PII. Includes
+	 * {@code Build.getSerial()} (the API 26+ replacement for the deprecated {@code Build.SERIAL}
+	 * field) — both are persistent device identifiers that {@code insecure-api-scan} also flags.
+	 * {@code Build\.getSerial} is not matched by any pre-existing term here, so a
+	 * {@code Log.d(TAG, Build.getSerial())} line was silently missed. Package-private so a test can
+	 * assert the modern API form is not missed.
+	 */
+	static final String PII_GETTER_REGEX =
+			"getDeviceId\\s*\\(|getImei\\s*\\(|getSubscriberId\\s*\\(|getSimSerialNumber\\s*\\(|"
+					+ "getMacAddress\\s*\\(|getAndroidId\\s*\\(|getLine1Number\\s*\\(|"
+					+ "Build\\.getSerial\\s*\\(|Build\\.SERIAL";
+
+	private static final Pattern PII_GETTER = Pattern.compile(PII_GETTER_REGEX);
 
 	@Override
 	protected void applyArgs(Map<String, Object> args) {
