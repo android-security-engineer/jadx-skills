@@ -6,6 +6,9 @@ import java.io.RandomAccessFile;
 import java.security.MessageDigest;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
+import java.security.interfaces.DSAPublicKey;
+import java.security.interfaces.ECPublicKey;
+import java.security.interfaces.RSAPublicKey;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Date;
@@ -120,6 +123,34 @@ public class ApkSignatureCommand extends AbstractCommand {
 		data.put("certificates", certs);
 		data.put("certificateCount", certs.size());
 		data.put("isSigned", !certs.isEmpty() || !schemes.isEmpty());
+
+		// Roll the per-cert verdicts up to the top level so the trust decision is one field away.
+		boolean debugSigned = false;
+		boolean weakSigned = false;
+		List<String> securityWarnings = new ArrayList<>();
+		for (Map<String, Object> c : certs) {
+			if (Boolean.TRUE.equals(c.get("debugCertificate"))) {
+				debugSigned = true;
+			}
+			if (Boolean.TRUE.equals(c.get("weakSignatureAlgorithm"))) {
+				weakSigned = true;
+			}
+			Object w = c.get("warnings");
+			if (w instanceof List) {
+				for (Object item : (List<?>) w) {
+					if (!securityWarnings.contains(String.valueOf(item))) {
+						securityWarnings.add(String.valueOf(item));
+					}
+				}
+			}
+		}
+		// v1-only signing is itself a downgrade risk (Janus / no APK-Signing-Block integrity).
+		if (!schemes.isEmpty() && schemes.contains("v1 (JAR)") && schemes.size() == 1) {
+			securityWarnings.add("only v1 (JAR) signature present — vulnerable to Janus-style tampering; no v2+ block");
+		}
+		data.put("debugSigned", debugSigned);
+		data.put("weakSignatureAlgorithm", weakSigned);
+		data.put("securityWarnings", securityWarnings);
 
 		if (certs.isEmpty() && schemes.isEmpty()) {
 			data.put("note", "No v1 PKCS#7 signer files and no APK Signing Block found "
@@ -309,8 +340,66 @@ public class ApkSignatureCommand extends AbstractCommand {
 		} catch (Exception ignored) {
 			// fingerprint computation best-effort
 		}
+
+		// ── Security verdicts on the signing certificate (trust decisions on the data above) ──
+		String subject = cert.getSubjectX500Principal().getName();
+		String issuer = cert.getIssuerX500Principal().getName();
+		boolean selfSigned = subject.equals(issuer); // normal for APK signing certs; reported, not warned
+		m.put("selfSigned", selfSigned);
+
+		String keyAlg = cert.getPublicKey().getAlgorithm();
+		m.put("keyAlgorithm", keyAlg);
+		int keySize = keySizeBits(cert);
+		if (keySize > 0) {
+			m.put("keySize", keySize);
+		}
+
+		// The Android SDK debug keystore signs with a fixed identity: "C=US, O=Android, CN=Android Debug".
+		// An app shipped with it is a debug build — not production, and the private key is public.
+		boolean debugCert = subject.toLowerCase(java.util.Locale.ROOT).contains("cn=android debug");
+		m.put("debugCertificate", debugCert);
+
+		String sigAlg = cert.getSigAlgName();
+		String sigUpper = sigAlg == null ? "" : sigAlg.toUpperCase(java.util.Locale.ROOT);
+		boolean weakSig = sigUpper.contains("MD5") || sigUpper.contains("SHA1") || sigUpper.contains("MD2");
+		m.put("weakSignatureAlgorithm", weakSig);
+
+		List<String> warnings = new ArrayList<>();
+		if (debugCert) {
+			warnings.add("signed with the Android debug certificate (non-production; private key is public)");
+		}
+		if (weakSig) {
+			warnings.add("weak signature algorithm: " + sigAlg + " (collision-prone)");
+		}
+		if ("RSA".equalsIgnoreCase(keyAlg) && keySize > 0 && keySize < 2048) {
+			warnings.add("undersized RSA key: " + keySize + " bits (< 2048)");
+		}
+		if (Boolean.TRUE.equals(m.get("expired"))) {
+			warnings.add("certificate has expired");
+		}
+		m.put("warnings", warnings);
+
 		m.put("source", source);
 		return m;
+	}
+
+	/** Public-key strength in bits: RSA/DSA modulus/prime length or EC field size; 0 if unknown. */
+	private static int keySizeBits(X509Certificate cert) {
+		try {
+			java.security.PublicKey pk = cert.getPublicKey();
+			if (pk instanceof RSAPublicKey) {
+				return ((RSAPublicKey) pk).getModulus().bitLength();
+			}
+			if (pk instanceof DSAPublicKey) {
+				return ((DSAPublicKey) pk).getParams().getP().bitLength();
+			}
+			if (pk instanceof ECPublicKey) {
+				return ((ECPublicKey) pk).getParams().getCurve().getField().getFieldSize();
+			}
+		} catch (Exception ignored) {
+			// best-effort
+		}
+		return 0;
 	}
 
 	private static String format(Date d) {

@@ -1138,6 +1138,9 @@ class CommandsTest {
 		assertTrue(output.contains("\"success\": true"), "Should succeed: " + output);
 		assertTrue(output.contains("\"isSigned\""), "Should contain isSigned: " + output);
 		assertTrue(output.contains("\"signatureSchemes\""), "Should contain signatureSchemes: " + output);
+		// Security verdicts rolled up from the parsed certs.
+		assertTrue(output.contains("\"debugSigned\""), "Should report debug-cert verdict: " + output);
+		assertTrue(output.contains("\"securityWarnings\""), "Should aggregate security warnings: " + output);
 	}
 
 	@Test
