@@ -50,6 +50,18 @@ public class SslScanCommand extends AbstractCommand {
 	private static final Pattern ACCEPTED_ISSUERS_NULL = Pattern.compile(
 			"getAcceptedIssuers\\s*\\(\\s*\\)\\s*\\{\\s*return\\s+(?:null|new\\s+X509Certificate\\s*\\[\\s*0\\s*\\])", Pattern.DOTALL);
 
+	// The declaration head of a trust-manager callback, up to the ')' of its parameter list. Used to
+	// locate the body via balanced-brace matching so we can inspect a NON-empty body that the
+	// whitespace-only EMPTY_CHECK_* regexes miss (e.g. "{ return; }", "{ Log.d(...); }").
+	private static final Pattern CHECK_SERVER_DECL = Pattern.compile("checkServerTrusted\\s*\\([^)]*\\)");
+	private static final Pattern CHECK_CLIENT_DECL = Pattern.compile("checkClientTrusted\\s*\\([^)]*\\)");
+	// A body that contains ANY of these is doing (or delegating) real validation, so it is NOT a
+	// blanket trust-all: `throw` rejects bad certs; a delegated checkServer/ClientTrusted or a
+	// checkValidity/verify call propagates the platform's rejection. Absence of all of them means the
+	// callback silently returns for every certificate — the classic non-empty trust-all stub.
+	private static final Pattern VALIDATION_SIGNAL = Pattern.compile(
+			"\\bthrow\\b|checkServerTrusted|checkClientTrusted|checkValidity|checkTrusted|isTrusted|\\bverify\\s*\\(");
+
 	// Hostname verification that always passes.
 	private static final Pattern VERIFY_TRUE = Pattern.compile(
 			"\\bverify\\s*\\([^)]*\\)\\s*\\{\\s*return\\s+true\\s*;\\s*\\}", Pattern.DOTALL);
@@ -115,6 +127,25 @@ public class SslScanCommand extends AbstractCommand {
 				"Empty checkClientTrusted() — client-auth validation disabled", findings);
 		addMatch(code, ACCEPTED_ISSUERS_NULL, cls, "trust_all_manager", "high",
 				"getAcceptedIssuers() returns null/empty — companion of a trust-all TrustManager", findings);
+
+		// Non-empty but still-trust-all bodies: the callback returns for every cert without throwing
+		// or delegating. EMPTY_CHECK_* only catch the whitespace-only "{ }" form; these catch the
+		// "{ return; }" / "{ Log.d(...); }" variants that are just as insecure.
+		for (int off : nonThrowingTrustBody(code, CHECK_SERVER_DECL)) {
+			if (findings.size() >= limit) {
+				break;
+			}
+			findings.add(finding(cls, lineNumberAt(code, off), "trust_all_manager", "high",
+					"checkServerTrusted() never throws and does not delegate — TrustManager accepts ALL server certificates (MITM)"));
+		}
+		for (int off : nonThrowingTrustBody(code, CHECK_CLIENT_DECL)) {
+			if (findings.size() >= limit) {
+				break;
+			}
+			findings.add(finding(cls, lineNumberAt(code, off), "trust_all_manager", "medium",
+					"checkClientTrusted() never throws and does not delegate — client-auth validation disabled"));
+		}
+
 		addMatch(code, ALLOW_ALL_VERIFIER, cls, "hostname_verifier", "high",
 				"ALLOW_ALL / AllowAll / Noop hostname verifier — hostname check disabled (MITM)", findings);
 
@@ -157,6 +188,89 @@ public class SslScanCommand extends AbstractCommand {
 			}
 		}
 		return line;
+	}
+
+	/**
+	 * Offsets of every {@code check*Trusted} method (matched by {@code decl}) whose body neither
+	 * throws nor delegates to a validator — i.e. a non-empty trust-all stub. Whitespace-only bodies
+	 * are skipped here because the {@code EMPTY_CHECK_*} regexes already report them, avoiding a
+	 * double finding. Package-private so a same-package test can drive it with synthetic sources.
+	 */
+	static List<Integer> nonThrowingTrustBody(String code, Pattern decl) {
+		List<Integer> hits = new ArrayList<>();
+		Matcher m = decl.matcher(code);
+		while (m.find()) {
+			int open = code.indexOf('{', m.end());
+			if (open < 0) {
+				continue;
+			}
+			int close = matchBrace(code, open);
+			if (close < 0) {
+				continue;
+			}
+			String body = code.substring(open + 1, close);
+			if (body.trim().isEmpty()) {
+				continue; // handled by EMPTY_CHECK_*; don't double-report
+			}
+			if (!VALIDATION_SIGNAL.matcher(body).find()) {
+				hits.add(m.start());
+			}
+		}
+		return hits;
+	}
+
+	/**
+	 * Index of the {@code '}'} matching the {@code '{'} at {@code openIdx}, honoring string, char,
+	 * and comment context so a brace inside a literal or comment does not throw off the depth count.
+	 * Returns -1 if unbalanced. Package-private for testing.
+	 */
+	static int matchBrace(String s, int openIdx) {
+		int depth = 0;
+		boolean inStr = false, inChar = false, inLine = false, inBlock = false;
+		for (int i = openIdx; i < s.length(); i++) {
+			char c = s.charAt(i);
+			char n = i + 1 < s.length() ? s.charAt(i + 1) : '\0';
+			if (inLine) {
+				if (c == '\n') {
+					inLine = false;
+				}
+			} else if (inBlock) {
+				if (c == '*' && n == '/') {
+					inBlock = false;
+					i++;
+				}
+			} else if (inStr) {
+				if (c == '\\') {
+					i++;
+				} else if (c == '"') {
+					inStr = false;
+				}
+			} else if (inChar) {
+				if (c == '\\') {
+					i++;
+				} else if (c == '\'') {
+					inChar = false;
+				}
+			} else if (c == '/' && n == '/') {
+				inLine = true;
+				i++;
+			} else if (c == '/' && n == '*') {
+				inBlock = true;
+				i++;
+			} else if (c == '"') {
+				inStr = true;
+			} else if (c == '\'') {
+				inChar = true;
+			} else if (c == '{') {
+				depth++;
+			} else if (c == '}') {
+				depth--;
+				if (depth == 0) {
+					return i;
+				}
+			}
+		}
+		return -1;
 	}
 
 	private static Map<String, Object> finding(String cls, int line, String kind, String severity, String detail) {
