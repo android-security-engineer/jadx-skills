@@ -42,13 +42,14 @@ public final class SecretPatterns {
 			// Cloud provider keys
 			new Rule("aws_access_key", "AKIA[0-9A-Z]{16}", "high"),
 			new Rule("aws_secret_key", "(?i)(?:aws.?secret|secret.?access.?key)[" + "'" + "\"" + ":\\\\s=]+" + Q + "?([A-Za-z0-9/+=]{40})" + Q + "?", "high"),
+			new Rule("azure_storage_account_key", "AccountKey[" + "'" + "\"" + "\\\\s:=]+" + Q + "?([A-Za-z0-9+/]{86,}={0,2})" + Q + "?", "high"),
 			new Rule("google_api_key", "AIza[0-9A-Za-z_\\-]{35}", "high"),
 			new Rule("google_oauth_id", "[0-9]{12}-[a-z0-9]{32}\\.apps\\.googleusercontent\\.com", "medium"),
 			new Rule("firebase_url", "https?://[a-z0-9][a-z0-9\\-]{1,61}(?:-default-rtdb)?\\.firebaseio\\.com", "high"),
 			new Rule("firebase_storage", "[a-z0-9][a-z0-9\\-]{3,62}\\.appspot\\.com", "medium"),
 			new Rule("gcp_storage_url", "https?://storage\\.googleapis\\.com/[a-z0-9\\-._/]{3,}", "medium"),
 			// Payment processor keys
-			new Rule("stripe_secret_key", "sk_(?:live|test)_[0-9a-zA-Z]{24,}", "high"),
+			new Rule("stripe_secret_key", "(?:sk|rk)_(?:live|test)_[0-9a-zA-Z]{24,}", "high"),
 			new Rule("stripe_publishable_key", "pk_(?:live|test)_[0-9a-zA-Z]{24,}", "medium"),
 			// Communication / messaging keys
 			new Rule("slack_token", "xox[baprs]-[0-9A-Za-z\\-]{10,48}", "high"),
@@ -57,7 +58,9 @@ public final class SecretPatterns {
 			new Rule("twilio_key_sid", "SK[0-9a-fA-F]{32}", "high"),
 			// Developer platform tokens
 			new Rule("github_token", "gh[pousr]_[0-9A-Za-z_]{36,}", "high"),
+			new Rule("github_fine_grained_pat", "github_pat_[0-9A-Za-z_]{82,}", "high"),
 			new Rule("mapbox_token", "pk\\.eyJ1[A-Za-z0-9_\\-]{60,}", "medium"),
+			new Rule("google_oauth_client_secret", "GOCSPX-[0-9A-Za-z_\\-]{24,}", "high"),
 			// Authentication tokens
 			new Rule("jwt", "eyJ[A-Za-z0-9_\\-]{10,}\\.[A-Za-z0-9_\\-]{10,}\\.[A-Za-z0-9_\\-]{10,}", "medium"),
 			new Rule("basic_auth", "Basic [A-Za-z0-9+/]{20,}={0,2}", "high"),

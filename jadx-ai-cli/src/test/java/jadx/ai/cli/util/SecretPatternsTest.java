@@ -26,7 +26,19 @@ class SecretPatternsTest {
 	private static final String FAKE_GOOGLE = "AIza" + "SyA1234567890abcdefghijklmnopqrstuv";
 	private static final String FAKE_JWT = "eyJhbGciOiJIUzI1NiJ9" + "." + "eyJzdWIiOiIxMjM0NTY3ODkwIn0" + "." + "abcdefghijklmnop";
 	private static final String FAKE_STRIPE = "sk_" + "live_" + "0123456789abcdef01234567";
+	private static final String FAKE_STRIPE_RESTRICTED = "rk_" + "live_" + "0123456789abcdef01234567";
 	private static final String FAKE_PEM = "-----BEGIN " + "RSA PRIVATE KEY-----";
+	private static final String FAKE_GITHUB_PAT = "github_pat_" + repeat("0123456789abcdef", 6); // 96 chars ≥ 82
+	private static final String FAKE_GOCSPX = "GOCSPX-" + "0123456789abcdefghijklmnopqrstuv"; // 30 chars ≥ 24
+	private static final String FAKE_AZURE_KEY = "AccountKey=" + repeat("AbcdefghijKlmnopqrstuv", 4) + "=="; // 88 base64 + ==
+
+	private static String repeat(String s, int n) {
+		StringBuilder sb = new StringBuilder();
+		for (int i = 0; i < n; i++) {
+			sb.append(s);
+		}
+		return sb.toString();
+	}
 
 	@Test
 	void detectsSecretsCarvedFromNativeStrings() {
@@ -73,5 +85,21 @@ class SecretPatternsTest {
 			many.add(FAKE_GOOGLE);
 		}
 		assertEquals(5, SecretPatterns.scanStrings(many, "x", "native", 5).size(), "limit must cap findings");
+	}
+
+	@Test
+	void detectsModernCloudAndPlatformSecrets() {
+		// Tokens the original library missed: GitHub fine-grained PAT (github_pat_), Google OAuth
+		// client secret (GOCSPX-), Stripe restricted key (rk_), Azure storage account key (AccountKey=).
+		List<Map<String, Object>> found = kinds(List.of(
+				FAKE_GITHUB_PAT, FAKE_GOCSPX, FAKE_STRIPE_RESTRICTED, FAKE_AZURE_KEY));
+		List<String> foundKinds = new ArrayList<>();
+		for (Map<String, Object> f : found) {
+			foundKinds.add((String) f.get("kind"));
+		}
+		assertTrue(foundKinds.contains("github_fine_grained_pat"), "should find github_pat_: " + foundKinds);
+		assertTrue(foundKinds.contains("google_oauth_client_secret"), "should find GOCSPX-: " + foundKinds);
+		assertTrue(foundKinds.contains("stripe_secret_key"), "rk_ restricted Stripe key maps to stripe_secret_key: " + foundKinds);
+		assertTrue(foundKinds.contains("azure_storage_account_key"), "should find Azure AccountKey: " + foundKinds);
 	}
 }
