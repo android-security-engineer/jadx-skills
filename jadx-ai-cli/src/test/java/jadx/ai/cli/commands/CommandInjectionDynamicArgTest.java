@@ -58,4 +58,21 @@ class CommandInjectionDynamicArgTest {
 		assertFalse(concat("Log.i(TAG, String.format(\"count=%d\", n));"),
 				"String.format not feeding an exec sink is not command concatenation");
 	}
+
+	@Test
+	void stringFormatInLaterExecArgumentFires() {
+		// After widening EXEC_DYNAMIC_ARG's first branch from sink-immediately-followed-by to
+		// sink-then-[^;]*?-followed-by, a String.format in a later exec argument is caught too:
+		// exec("sh","-c",String.format(...)) — the multi-arg shell form, same injection class.
+		assertTrue(concat("Runtime.getRuntime().exec(\"sh\", \"-c\", String.format(\"ls %s\", input));"),
+				"a String.format in a later exec argument must fire high, not fall to info");
+	}
+
+	@Test
+	void staticExecWithUnrelatedStringFormatAfterSemicolonDoesNotFire() {
+		// The [^;]*? boundary blocks cross-statement FP: a static (non-concatenated) exec followed
+		// by an unrelated String.format after the statement's ';' must NOT fire.
+		assertFalse(concat("Runtime.getRuntime().exec(\"ls -la\"); Log.i(TAG, String.format(\"n=%d\", n));"),
+				"a static exec must not fire just because an unrelated String.format sits after the ; on the same line");
+	}
 }

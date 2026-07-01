@@ -62,7 +62,7 @@ public class CommandInjectionScanCommand extends AbstractCommand {
 	 * {@code String.format} used for logging elsewhere on the line is not a false positive.
 	 */
 	static final Pattern EXEC_DYNAMIC_ARG = Pattern.compile(
-			"(?:\\.exec\\s*\\(|new\\s+ProcessBuilder\\s*\\(|ProcessBuilder\\s*\\()\\s*"
+			"(?:\\.exec\\s*\\(|new\\s+ProcessBuilder\\s*\\(|ProcessBuilder\\s*\\()[^;]*?"
 					+ "(?:String\\.format|MessageFormat|new\\s+StringBuilder)"
 					+ "|(?:\\.exec\\s*\\(|new\\s+ProcessBuilder\\s*\\(|ProcessBuilder\\s*\\()[^;]*?"
 					+ "\\.(?:concat|append)\\s*\\(");
