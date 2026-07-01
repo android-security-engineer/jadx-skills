@@ -89,8 +89,6 @@ public class InsecureKeystoreScanCommand extends AbstractCommand {
 					+ "MessageDigest\\.getInstance\\s*\\(\\s*\"MD5|"
 					+ "MessageDigest\\.getInstance\\s*\\(\\s*\"SHA1|"
 					+ "Cipher\\.getInstance\\s*\\(\\s*\"AES/ECB");
-	private static final Pattern KEYSTORE_PASSWORD = Pattern.compile(
-			"KeyStore\\.getInstance|keystore\\.load\\s*\\(");
 	private static final Pattern HARDCODED_PASSWORD = Pattern.compile(
 			"load\\s*\\([^,]+,\\s*\"[^\"]+\"|load\\s*\\([^,]+,\\s*\\w+\\s*\\.toCharArray");
 

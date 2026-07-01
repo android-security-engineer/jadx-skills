@@ -29,10 +29,12 @@ public class EntrypointScanCommand extends AbstractCommand {
 	@Option(names = { "--limit" }, description = "Maximum entry points per category", defaultValue = "50")
 	protected int limit = 50;
 
-	private static final Pattern APP_CLASS = Pattern.compile("android:name\\s*=\\s*\"([^\"]+)\"[^>]*>\\s*<intent-filter>|android:name\\s*=\\s*\"([^\"]+)\"");
-	private static final Pattern MANIFEST_COMPONENT = Pattern.compile("<(activity|service|receiver|provider)[^>]*android:name\\s*=\\s*\"([^\"]+)\"[^>]*(android:exported\\s*=\\s*\"([^\"]+)\"|)[^>]*>");
 	private static final Pattern LAUNCHER_FILTER = Pattern.compile("android.intent.category.LAUNCHER");
 	private static final Pattern MAIN_ACTION = Pattern.compile("android.intent.action.MAIN");
+
+	/** Extracts android:exported="..." from a manifest component block; null if absent. */
+	private static final Pattern EXPORTED_ATTR = Pattern.compile(
+			"android:exported\\s*=\\s*\"(true|false)\"");
 
 	@Override
 	protected void applyArgs(Map<String, Object> args) {
@@ -123,6 +125,18 @@ public class EntrypointScanCommand extends AbstractCommand {
 	}
 
 	private void scanManifestEntrypoints(String xml, List<Map<String, Object>> entrypoints) {
+		entrypoints.addAll(parseManifestEntrypoints(xml));
+	}
+
+	/**
+	 * Pure manifest-component parser, extracted for testability. Returns launcher-activities, services,
+	 * receivers, providers, activity-aliases and the application class declared in the manifest, each
+	 * with its {@code android:exported} value when declared. Package-private so a synthetic-XML test
+	 * can assert the exported-attribute surfacing (the realisation of the dead MANIFEST_COMPONENT
+	 * regex's captured-but-unused exported group).
+	 */
+	static List<Map<String, Object>> parseManifestEntrypoints(String xml) {
+		List<Map<String, Object>> entrypoints = new ArrayList<>();
 		// Application class
 		Matcher appM = Pattern.compile("<application[^>]*android:name\\s*=\\s*\"([^\"]+)\"").matcher(xml);
 		if (appM.find()) {
@@ -148,6 +162,7 @@ public class EntrypointScanCommand extends AbstractCommand {
 					ep.put("className", nameM.group(1));
 					ep.put("source", "manifest");
 					ep.put("note", "Main launcher activity — app entry point");
+					putExported(ep, block);
 					entrypoints.add(ep);
 				}
 			}
@@ -162,6 +177,7 @@ public class EntrypointScanCommand extends AbstractCommand {
 				ep.put("kind", "service");
 				ep.put("className", nameM.group(1));
 				ep.put("source", "manifest");
+				putExported(ep, blocks[i]);
 				entrypoints.add(ep);
 			}
 		}
@@ -175,6 +191,7 @@ public class EntrypointScanCommand extends AbstractCommand {
 				ep.put("kind", "receiver");
 				ep.put("className", nameM.group(1));
 				ep.put("source", "manifest");
+				putExported(ep, blocks[i]);
 				entrypoints.add(ep);
 			}
 		}
@@ -188,6 +205,7 @@ public class EntrypointScanCommand extends AbstractCommand {
 				ep.put("kind", "provider");
 				ep.put("className", nameM.group(1));
 				ep.put("source", "manifest");
+				putExported(ep, blocks[i]);
 				entrypoints.add(ep);
 			}
 		}
@@ -205,8 +223,29 @@ public class EntrypointScanCommand extends AbstractCommand {
 					ep.put("targetActivity", targetM.group(1));
 				}
 				ep.put("source", "manifest");
+				putExported(ep, blocks[i]);
 				entrypoints.add(ep);
 			}
+		}
+		return entrypoints;
+	}
+
+	/**
+	 * Attaches the component's {@code android:exported} value to the entrypoint, when declared. A null
+	 * (absent) exported attr is itself significant on older targetSdkVersions (implicit-export rules),
+	 * so absent → no field, declared → "true"/"false". The dead {@code MANIFEST_COMPONENT} regex
+	 * captured this group but never surfaced it; this realises that intent for attack-surface triage.
+	 *
+	 * <p>The block is truncated at the component's own first {@code >} so a self-closing component
+	 * (e.g. {@code <receiver .../>}) does not absorb the {@code exported} of a following sibling — the
+	 * same cross-component misattribution class fixed in {@link ManifestSecurityAuditCommand}.
+	 */
+	private static void putExported(Map<String, Object> ep, String block) {
+		int tagEnd = block.indexOf('>');
+		String tag = tagEnd >= 0 ? block.substring(0, tagEnd) : block;
+		Matcher m = EXPORTED_ATTR.matcher(tag);
+		if (m.find()) {
+			ep.put("exported", m.group(1));
 		}
 	}
 
