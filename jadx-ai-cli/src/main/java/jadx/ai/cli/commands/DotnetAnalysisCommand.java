@@ -67,6 +67,8 @@ public class DotnetAnalysisCommand extends AbstractCommand {
 		boolean sawCoreLib = false;
 		boolean sawXalz = false;
 		boolean sawRawPe = false;
+		boolean sawAssemblyCSharp = false;
+		boolean hasUnityManagedPath = false;
 		int dllCount = 0;
 
 		for (ResourceFile res : decompiler.getResources()) {
@@ -105,6 +107,14 @@ public class DotnetAnalysisCommand extends AbstractCommand {
 			}
 			if (base.equalsIgnoreCase("System.Private.CoreLib.dll")) {
 				sawCoreLib = true;
+			}
+			// Unity Mono (non-IL2CPP): the game logic ships as plain-IL Assembly-CSharp.dll under
+			// assets/bin/Data/Managed/ — directly decompilable, no il2cpp dumping needed.
+			if (norm.contains("bin/Data/Managed/")) {
+				hasUnityManagedPath = true;
+			}
+			if (base.equalsIgnoreCase("Assembly-CSharp.dll")) {
+				sawAssemblyCSharp = true;
 			}
 
 			dllCount++;
@@ -147,17 +157,12 @@ public class DotnetAnalysisCommand extends AbstractCommand {
 			}
 		}
 
+		boolean isUnityMono = sawAssemblyCSharp || hasUnityManagedPath;
 		boolean isDotnet = dllCount > 0 || storeBlob != null || hasMonodroidLib
-				|| hasMonosgenLib || hasXamarinAppLib || hasDotnetRuntimeLib;
+				|| hasMonosgenLib || hasXamarinAppLib || hasDotnetRuntimeLib || isUnityMono;
 
-		String flavor;
-		if (sawCoreLib || hasDotnetRuntimeLib) {
-			flavor = ".NET 5+ / MAUI";
-		} else if (sawMscorlib || hasMonodroidLib || hasMonosgenLib || hasXamarinAppLib) {
-			flavor = "classic Xamarin.Android (Mono)";
-		} else {
-			flavor = isDotnet ? "unknown .NET" : "not .NET";
-		}
+		String flavor = runtimeFlavor(isUnityMono, sawCoreLib || hasDotnetRuntimeLib,
+				sawMscorlib || hasMonodroidLib || hasMonosgenLib || hasXamarinAppLib, isDotnet);
 
 		Map<String, Object> data = new LinkedHashMap<>();
 		data.put("isDotnet", isDotnet);
@@ -176,10 +181,17 @@ public class DotnetAnalysisCommand extends AbstractCommand {
 		}
 		data.put("xalzCompressed", sawXalz);
 		data.put("rawPeAssemblies", sawRawPe);
+		data.put("unityMono", isUnityMono);
+		data.put("hasAssemblyCSharp", sawAssemblyCSharp);
 
 		if (isDotnet) {
 			List<String> notes = new ArrayList<>();
 			notes.add(".NET/Xamarin app — real logic is C#/IL in the managed assemblies, not the Java shell");
+			if (sawAssemblyCSharp) {
+				notes.add("Unity Mono game: Assembly-CSharp.dll is plain IL — decompile directly with ILSpy/dnSpy (no il2cpp dumping; game logic/anti-cheat/IAP checks are fully readable)");
+			} else if (isUnityMono) {
+				notes.add("Unity Mono layout (bin/Data/Managed) — managed game assemblies are directly decompilable");
+			}
 			if (sawXalz) {
 				notes.add("Assemblies are XALZ/LZ4-compressed — decompress (e.g. pyxamstore/xalz) before ILSpy/dnSpy");
 			}
@@ -192,6 +204,24 @@ public class DotnetAnalysisCommand extends AbstractCommand {
 			data.put("notes", notes);
 		}
 		return JsonOutput.ok(data);
+	}
+
+	/**
+	 * Runtime flavor by precedence. Unity Mono is checked first because a Unity game also ships
+	 * {@code mscorlib.dll} (which would otherwise read as classic Xamarin) — the Unity layout is the
+	 * more specific signal and must win.
+	 */
+	static String runtimeFlavor(boolean unityMono, boolean modernDotnet, boolean classicMono, boolean isDotnet) {
+		if (unityMono) {
+			return "Unity (Mono)";
+		}
+		if (modernDotnet) {
+			return ".NET 5+ / MAUI";
+		}
+		if (classicMono) {
+			return "classic Xamarin.Android (Mono)";
+		}
+		return isDotnet ? "unknown .NET" : "not .NET";
 	}
 
 	private static byte[] readHead(ResourceFile res) {
