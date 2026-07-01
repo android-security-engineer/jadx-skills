@@ -18,6 +18,7 @@ class CommandsTest {
 
 	private static File testDex;
 	private static File testApk;
+	private static File nativeApk;
 
 	@BeforeAll
 	static void setup() {
@@ -25,6 +26,10 @@ class CommandsTest {
 		assertTrue(testDex.exists(), "Test DEX file must exist: " + testDex.getAbsolutePath());
 		testApk = new File("../jadx-cli/src/test/resources/samples/small.apk");
 		assertTrue(testApk.exists(), "Test APK file must exist: " + testApk.getAbsolutePath());
+		// resources-only.apk bundles lib/x86_64/libcode.so — the only fixture with a real ELF .so,
+		// needed to exercise native-lib-security's ELF/checksec parsing end-to-end.
+		nativeApk = new File("../jadx-cli/src/test/resources/samples/resources-only.apk");
+		assertTrue(nativeApk.exists(), "Native APK fixture must exist: " + nativeApk.getAbsolutePath());
 	}
 
 	@Test
@@ -1005,6 +1010,20 @@ class CommandsTest {
 		assertTrue(output.contains("\"libraries\""), "Should contain libraries: " + output);
 		assertTrue(output.contains("\"libraryCount\""), "Should contain libraryCount: " + output);
 		assertTrue(output.contains("\"highRiskCount\""), "Should contain highRiskCount: " + output);
+	}
+
+	@Test
+	void testNativeLibSecurityParsesRealElf() {
+		// Guards the fixed byte-reader (previously returned null → always-empty result) AND the new
+		// .dynamic ground-truth: DT_NEEDED deps, SONAME, full-vs-partial RELRO via BIND_NOW.
+		String output = runCommand("native-lib-security", nativeApk.getAbsolutePath());
+		assertNotNull(output);
+		assertTrue(output.contains("\"success\": true"), "Should succeed: " + output);
+		assertTrue(output.contains("libcode.so"), "Must actually read the bundled .so: " + output);
+		assertTrue(output.contains("\"arch\": \"x86_64\""), "Must parse ELF arch: " + output);
+		assertTrue(output.contains("\"relroType\""), "Must report checksec relroType: " + output);
+		assertTrue(output.contains("\"neededLibraries\""), "Must list DT_NEEDED deps: " + output);
+		assertTrue(output.contains("libc.so"), "DT_NEEDED must include libc.so: " + output);
 	}
 
 	@Test

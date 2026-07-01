@@ -1,8 +1,5 @@
 package jadx.ai.cli.commands;
 
-import java.io.BufferedInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -14,6 +11,8 @@ import picocli.CommandLine.Option;
 import jadx.ai.cli.output.JsonOutput;
 import jadx.api.JadxDecompiler;
 import jadx.api.ResourceFile;
+import jadx.api.ResourceType;
+import jadx.api.ResourcesLoader;
 
 /**
  * Security-checks native libraries (.so files) embedded in the APK. Absorbs the ELF binary
@@ -27,6 +26,9 @@ public class NativeLibSecurityCommand extends AbstractCommand {
 
 	@Option(names = { "--limit" }, description = "Maximum libraries to analyze", defaultValue = "50")
 	protected int limit = 50;
+
+	/** Cap bytes read per .so so a huge packed lib can't exhaust memory (64 MiB, as NativeLibsCommand). */
+	private static final long MAX_LIB_BYTES = 67108864L;
 
 	// Crypto constant signatures (absorbed from droid-re-chain tools_static.py)
 	private static final byte[][] CRYPTO_SIGS = {
@@ -60,25 +62,16 @@ public class NativeLibSecurityCommand extends AbstractCommand {
 			if (libraries.size() >= limit) {
 				break;
 			}
+			if (res.getType() != ResourceType.LIB) {
+				continue;
+			}
 			String name = res.getOriginalName();
-			if (name == null || !name.endsWith(".so")) {
+			if (name == null || !name.toLowerCase(java.util.Locale.ROOT).endsWith(".so")) {
 				continue;
 			}
 
 			byte[] data;
 			try {
-				var container = res.loadContent();
-				if (container == null) {
-					continue;
-				}
-				// Read binary data
-				ByteArrayOutputStream baos = new ByteArrayOutputStream();
-				try (var is = container.getText() != null ? null : new BufferedInputStream(
-						new java.io.ByteArrayInputStream(new byte[0]))) {
-					// For binary resources, use the raw data
-					baos = new ByteArrayOutputStream();
-				}
-				// Try to get the data from the resource
 				data = readResourceBytes(res);
 				if (data == null || data.length < 64) {
 					continue;
@@ -113,17 +106,13 @@ public class NativeLibSecurityCommand extends AbstractCommand {
 	}
 
 	private byte[] readResourceBytes(ResourceFile res) {
+		// Read the .so's raw bytes straight from the APK zip entry via jadx's ResourcesLoader —
+		// the same path NativeLibsCommand uses. (The old body returned null unconditionally, which
+		// silently reduced every native-lib-security run to an empty result.)
 		try {
-			var container = res.loadContent();
-			if (container == null) {
-				return null;
-			}
-			// For binary resources, the text might be null; try to get the raw stream
-			// Unfortunately jadx's ResourceFile API doesn't expose raw bytes easily,
-			// so we read the decompiled text representation and extract embedded strings.
-			// For a proper implementation we'd need to access the zip entry directly.
-			// Fallback: return null to skip binary analysis
-			return null;
+			byte[] read = ResourcesLoader.decodeStream(res,
+					(size, is) -> is.readNBytes((int) Math.min(MAX_LIB_BYTES, Integer.MAX_VALUE)));
+			return read;
 		} catch (Exception e) {
 			return null;
 		}
@@ -151,9 +140,26 @@ public class NativeLibSecurityCommand extends AbstractCommand {
 		boolean nx = checkNx(data, is64);
 		lib.put("nx", nx);
 
-		// RELRO: check for GNU_RELRO program header
+		// RELRO: GNU_RELRO program header presence is only PARTIAL relro. Full relro additionally
+		// requires the loader to resolve every symbol up-front (BIND_NOW), which lives in the
+		// .dynamic segment — so we parse it for ground truth rather than guess from a segment flag.
 		boolean relro = checkRelro(data, is64);
 		lib.put("relro", relro);
+
+		// Ground-truth dynamic-segment parse: DT_NEEDED deps, SONAME, RUNPATH/RPATH, BIND_NOW, FORTIFY.
+		jadx.ai.cli.util.ElfDynamicInfo dyn = jadx.ai.cli.util.ElfDynamicInfo.parse(data);
+		lib.put("relroType", dyn.relroType(relro)); // none | partial | full (checksec semantics)
+		lib.put("neededLibraries", dyn.needed);
+		if (dyn.soname != null && !dyn.soname.isEmpty()) {
+			lib.put("soname", dyn.soname);
+		}
+		if (dyn.runpath != null && !dyn.runpath.isEmpty()) {
+			lib.put("runpath", dyn.runpath); // writable RUNPATH => library-hijack surface
+		}
+		if (dyn.rpath != null && !dyn.rpath.isEmpty()) {
+			lib.put("rpath", dyn.rpath);
+		}
+		lib.put("fortifySourceFunctions", dyn.fortifyChkCount); // count of *_chk fortified imports
 
 		// Stack canary: check for __stack_chk_fail in dynamic symbol table
 		boolean canary = checkCanary(data);
