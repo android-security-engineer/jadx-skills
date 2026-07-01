@@ -436,7 +436,7 @@ public class McpToolDefinitions {
 				optArg("limit", "integer", "Maximum number of findings", 300)));
 
 		tools.add(tool("jadx_serialization_scan",
-				"Scan code for insecure (de)serialization (MASVS MSTG-PLATFORM/CODE): ObjectInputStream.readObject/readUnshared and XMLDecoder (gadget-chain RCE), Jackson enableDefaultTyping/@JsonTypeInfo polymorphic typing, Serializable/Parcelable read from Intent extras (forgeable by a malicious app), and XML parsers that may be XXE-prone",
+				"Scan code for insecure (de)serialization (MASVS MSTG-PLATFORM/CODE): ObjectInputStream.readObject/readUnshared and XMLDecoder (gadget-chain RCE), Jackson enableDefaultTyping/@JsonTypeInfo and Gson RuntimeTypeAdapterFactory/@JsonSubTypes polymorphic typing, Serializable/Parcelable (incl. array/list extras and the API 33+ two-arg getSerializable) read from Intent extras (forgeable by a malicious app), and XML parsers that may be XXE-prone",
 				optArg("package", "string", "Only scan classes under this package prefix", null),
 				optArg("limit", "integer", "Maximum number of findings", 300)));
 

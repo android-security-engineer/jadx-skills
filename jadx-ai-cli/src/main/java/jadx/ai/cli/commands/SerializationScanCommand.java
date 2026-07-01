@@ -30,8 +30,9 @@ import jadx.api.JavaClass;
  *       {@code setFeature(...disallow-doctype...)} (XXE neighbour). We flag the reader; XXE-specific
  *       hardening absence is reported as info.</li>
  *   <li><b>Gson/Jackson polymorphic typing</b> — {@code enableDefaultTyping(} /
- *       {@code @JsonTypeInfo} / {@code activateDefaultTyping(}: Jackson polymorphic deserialization,
- *       a known gadget surface. High.</li>
+ *       {@code @JsonTypeInfo} / {@code activateDefaultTyping(} / Gson {@code RuntimeTypeAdapterFactory}:
+ *       runtime type-polymorphic deserialization, a known gadget surface (the type discriminator is
+ *       attacker-controlled). High.</li>
  *   <li><b>Custom readObject</b> — a class implementing {@code Serializable} that defines a private
  *       {@code readObject(ObjectInputStream)} — info, worth a manual look.</li>
  * </ul>
@@ -51,7 +52,26 @@ public class SerializationScanCommand extends AbstractCommand {
 
 	/** Cheap class-level gate: only classes that touch (de)serialization at all. */
 	private static final Pattern SERDE_MARKER = Pattern.compile(
-			"ObjectInputStream|readObject|readUnshared|XMLDecoder|getSerializableExtra|getParcelableExtra|enableDefaultTyping|activateDefaultTyping|JsonTypeInfo|SAXParser|DocumentBuilder|XMLReader|Serializable");
+			"ObjectInputStream|readObject|readUnshared|XMLDecoder|getSerializableExtra|getParcelableExtra|getParcelableArrayExtra|getParcelableArrayListExtra|enableDefaultTyping|activateDefaultTyping|RuntimeTypeAdapterFactory|JsonTypeInfo|SAXParser|DocumentBuilder|XMLReader|Serializable");
+
+	/**
+	 * Untrusted Serializable/Parcelable object read from an Intent — all the Bundle getters that hand
+	 * back an attacker-forgeable object. Package-private so a test can assert the modern variants
+	 * ({@code getParcelableArrayExtra}/{@code getParcelableArrayListExtra} smuggle a list/array of
+	 * Parcelable, and API 33+ {@code getSerializable(name, Class.class)} is a two-arg overload).
+	 */
+	static final Pattern IPC_OBJECT_SOURCE = Pattern.compile(
+			"getSerializableExtra\\s*\\(|getSerializable\\s*\\(|getParcelableExtra\\s*\\(|"
+					+ "getParcelableArrayExtra\\s*\\(|getParcelableArrayListExtra\\s*\\(|"
+					+ "getSerializableArrayListExtra\\s*\\(");
+
+	/**
+	 * Gson {@code RuntimeTypeAdapterFactory} — runtime type-polymorphic deserialization where the type
+	 * discriminator is an attacker-controlled JSON field, the Gson equivalent of Jackson default
+	 * typing. Package-private for testing.
+	 */
+	static final Pattern GSON_RUNTIME_TYPE = Pattern.compile(
+			"RuntimeTypeAdapterFactory|@JsonSubTypes|registerSubtype\\s*\\(");
 
 	private static final class Rule {
 		final Pattern pattern;
@@ -77,7 +97,10 @@ public class SerializationScanCommand extends AbstractCommand {
 			new Rule(Pattern.compile("enableDefaultTyping\\s*\\(|activateDefaultTyping\\s*\\("),
 					"jackson_default_typing", "high",
 					"Jackson polymorphic default typing — a well-known deserialization gadget surface; restrict with a PolymorphicTypeValidator or remove"),
-			new Rule(Pattern.compile("getSerializableExtra\\s*\\(|getParcelableExtra\\s*\\("),
+			new Rule(GSON_RUNTIME_TYPE,
+					"gson_runtime_type_adapter", "high",
+					"Gson RuntimeTypeAdapterFactory / @JsonSubtypes — runtime type-polymorphic deserialization where the type discriminator is attacker-controlled; restrict the registered subtypes to a safe closed set"),
+			new Rule(IPC_OBJECT_SOURCE,
 					"untrusted_ipc_object", "medium",
 					"Serializable/Parcelable read from an Intent — a malicious app can forge this object; validate type and contents before use"),
 			new Rule(Pattern.compile("@JsonTypeInfo"),
