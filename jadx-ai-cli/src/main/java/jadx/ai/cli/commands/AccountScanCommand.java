@@ -39,9 +39,20 @@ public class AccountScanCommand extends AbstractCommand {
 	@Option(names = { "--limit" }, description = "Maximum number of findings", defaultValue = "200")
 	protected int limit = 200;
 
-	private static final Pattern ACCT_MARKER = Pattern.compile(
+	/**
+	 * Gate: only scan classes that touch the account/sync surface. Kept in sync with the RULES set —
+	 * every rule anchor must appear here or a class exercising only that rule is skipped at the gate
+	 * and the finding is silently dropped. {@code addPeriodicSync}/{@code setSyncAutomatically} are
+	 * {@code ContentResolver} static methods usable with NO {@code AccountManager} and NO
+	 * {@code requestSync} in the class, so a pure periodic-sync class was skipped and
+	 * {@code acct_sync} never fired; same for {@code addAccountExplicitly}/{@code invalidateAuthToken}/
+	 * {@code getAuthToken}. Package-private so a test can assert the gate covers every rule anchor.
+	 */
+	static final Pattern ACCT_MARKER = Pattern.compile(
 			"AccountManager|AbstractAccountAuthenticator|AccountAuthenticatorActivity|"
-					+ "ContentResolver\\.requestSync|getAccounts|peekAuthToken|setAuthToken|AccountAuthenticator");
+					+ "ContentResolver\\.requestSync|addPeriodicSync|setSyncAutomatically|"
+					+ "getAccounts|peekAuthToken|setAuthToken|invalidateAuthToken|"
+					+ "addAccountExplicitly|getAuthToken|blockingGetAuthToken|AccountAuthenticator");
 
 	private static final class Rule {
 		final Pattern pattern;
