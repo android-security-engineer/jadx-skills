@@ -28,16 +28,20 @@ import jadx.api.JavaClass;
  *
  * <p>Heuristic (class-scoped): a class that both extracts a nested Intent ({@code classHasSource}) and
  * launches an Intent ({@code classLaunches}) is flagged {@code intent_redirection/high} on its first
- * launch sink (one per class). {@code Intent.parseUri(...)} on untrusted data is flagged
- * {@code unsafe_intent_parse/medium} on each occurrence (parsing an attacker URI into an Intent is
- * itself risky — it can set component/flags). {@code setResult(...,intent)} returning an extracted
- * Intent is {@code result_redirection/medium}.
+ * launch sink (one per class). The source set covers single-Parcelable extras
+ * ({@code getParcelableExtra}/{@code getParcelable}) AND the array / array-list variants
+ * ({@code getParcelableArrayExtra}/{@code getParcelableArrayListExtra}) — an attacker can smuggle a
+ * nested Intent as an element of a {@code Parcelable[]} / {@code ArrayList<Parcelable>} just as well as
+ * a single value, and the victim iterates and launches it. {@code Intent.parseUri(...)} on untrusted
+ * data is flagged {@code unsafe_intent_parse/medium} on each occurrence (parsing an attacker URI into an
+ * Intent is itself risky — it can set component/flags). {@code setResult(...,intent)} returning an
+ * extracted Intent is {@code result_redirection/medium}.
  *
  * Returns {@code {findings:[{kind,severity,className,lineNumber,detail}], count, highSeverityCount,
  * redirectionClasses, usesIntentParseUri, truncated}}.
  */
 @Command(name = "intent-redirection-scan",
-		description = "Detect Intent redirection / confused-deputy (CWE-927, Google Play-flagged): a nested Intent extracted from an incoming Intent (getParcelableExtra / getParcelable / Intent.parseUri) is then launched (startActivity/startService/sendBroadcast/bindService/setResult), proxying access to non-exported components. Not covered by intent-scan")
+		description = "Detect Intent redirection / confused-deputy (CWE-927, Google Play-flagged): a nested Intent extracted from an incoming Intent (getParcelableExtra / getParcelable / getParcelableArrayExtra / getParcelableArrayListExtra / Intent.parseUri) is then launched (startActivity/startService/sendBroadcast/bindService/setResult), proxying access to non-exported components. Not covered by intent-scan")
 public class IntentRedirectionScanCommand extends AbstractCommand {
 
 	@Option(names = { "-p", "--package" }, description = "Only scan classes under this package prefix")
@@ -46,9 +50,20 @@ public class IntentRedirectionScanCommand extends AbstractCommand {
 	@Option(names = { "--limit" }, description = "Maximum number of findings", defaultValue = "300")
 	protected int limit = 300;
 
-	/** Extracting a nested Intent from incoming (untrusted) data — the redirection source. */
-	private static final Pattern INTENT_SOURCE = Pattern.compile(
-			"getParcelableExtra\\s*\\(|getParcelable\\s*\\(|IntentCompat\\.getParcelableExtra|Intent\\.parseUri\\s*\\(");
+	/**
+	 * Extracting a nested Intent from incoming (untrusted) data — the redirection source. Covers the
+	 * single-Parcelable extractors AND the array / array-list variants: {@code getParcelableArrayExtra}
+	 * returns a {@code Parcelable[]} and {@code getParcelableArrayListExtra} an
+	 * {@code ArrayList<Parcelable>}; an attacker can smuggle a nested Intent as one element of either,
+	 * and the victim iterates and launches it. The bare {@code getParcelable\s*\(} term does NOT match
+	 * these — the char after {@code getParcelable} is {@code A}, not {@code (} — so without explicit
+	 * terms the array/list redirection sources were silently missed.
+	 *
+	 * <p>Package-private so a synthetic-input test can assert the source set.
+	 */
+	static final Pattern INTENT_SOURCE = Pattern.compile(
+			"getParcelableExtra\\s*\\(|getParcelable\\s*\\(|getParcelableArrayExtra\\s*\\(|"
+					+ "getParcelableArrayListExtra\\s*\\(|IntentCompat\\.getParcelableExtra|Intent\\.parseUri\\s*\\(");
 
 	/** Launching with an Intent — the redirection sink. */
 	private static final Pattern LAUNCH_SINK = Pattern.compile(
