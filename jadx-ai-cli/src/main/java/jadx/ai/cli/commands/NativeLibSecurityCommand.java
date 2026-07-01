@@ -161,8 +161,21 @@ public class NativeLibSecurityCommand extends AbstractCommand {
 		}
 		lib.put("fortifySourceFunctions", dyn.fortifyChkCount); // count of *_chk fortified imports
 
-		// Stack canary: check for __stack_chk_fail in dynamic symbol table
-		boolean canary = checkCanary(data);
+		// Ground-truth dynamic symbol table (nm -D). Survives strip, so it beats the string heuristic:
+		// exportedCount/jniExports are the REAL native attack surface to cross-ref native-bridge-index.
+		jadx.ai.cli.util.ElfSymbols syms = jadx.ai.cli.util.ElfSymbols.parse(data, 200);
+		lib.put("exportedCount", syms.exportedCount);
+		lib.put("importedCount", syms.importedCount);
+		lib.put("exportedFunctions", syms.exported);
+		lib.put("importedFunctions", syms.imported);
+		lib.put("jniExports", syms.jniExports); // Java_* / JNI_OnLoad actually present in the .so
+
+		// Stack canary: __stack_chk_fail present. Prefer the parsed .dynsym (exact) over a string grep,
+		// falling back to the string scan when the symbol table couldn't be walked.
+		boolean canary = syms.parsed
+				? (syms.imported.contains("__stack_chk_fail") || syms.exported.contains("__stack_chk_fail")
+						|| checkCanary(data))
+				: checkCanary(data);
 		lib.put("canary", canary);
 
 		// Crypto constants
@@ -203,10 +216,16 @@ public class NativeLibSecurityCommand extends AbstractCommand {
 		if (!hasTextSection(data, is64)) {
 			obfuscationIndicators.add("missing .text section (stripped or packed)");
 		}
-		if (isSymbolStripped(data)) {
-			obfuscationIndicators.add("all dynamic symbols stripped");
+		if (syms.parsed ? (syms.exportedCount == 0 && syms.importedCount == 0) : isSymbolStripped(data)) {
+			obfuscationIndicators.add("empty dynamic symbol table (packed/obfuscated)");
 		}
-		lib.put("obfuscationIndicators", obfuscationIndicators);
+			// A lib that exposes JNI_OnLoad but exports no Java_* symbols registers its natives
+			// dynamically via RegisterNatives — a common tactic to hide the native surface from static
+			// cross-referencing against native-bridge-index's Java-declared native methods.
+			if (syms.parsed && syms.jniExports.isEmpty() && syms.exported.contains("JNI_OnLoad")) {
+				obfuscationIndicators.add("JNI methods registered dynamically (no exported Java_* symbols)");
+			}
+			lib.put("obfuscationIndicators", obfuscationIndicators);
 
 		return lib;
 	}

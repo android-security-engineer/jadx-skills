@@ -1024,6 +1024,10 @@ class CommandsTest {
 		assertTrue(output.contains("\"relroType\""), "Must report checksec relroType: " + output);
 		assertTrue(output.contains("\"neededLibraries\""), "Must list DT_NEEDED deps: " + output);
 		assertTrue(output.contains("libc.so"), "DT_NEEDED must include libc.so: " + output);
+		// nm -D ground truth from the parsed .dynsym (survives strip — beats the string heuristic).
+		assertTrue(output.contains("\"exportedCount\""), "Must report parsed .dynsym export count: " + output);
+		assertTrue(output.contains("\"importedFunctions\""), "Must list imported symbols: " + output);
+		assertTrue(output.contains("\"jniExports\""), "Must surface the JNI export surface: " + output);
 	}
 
 	@Test
