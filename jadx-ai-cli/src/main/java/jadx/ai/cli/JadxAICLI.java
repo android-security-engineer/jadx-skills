@@ -94,6 +94,7 @@ import jadx.ai.cli.commands.BypassHookCommand;
 import jadx.ai.cli.commands.PackerDetectCommand;
 import jadx.ai.cli.commands.CapabilityReportCommand;
 import jadx.ai.cli.commands.NativeLibSecurityCommand;
+import jadx.ai.cli.commands.JniBindingAuditCommand;
 import jadx.ai.cli.commands.ApiEndpointExtractCommand;
 import jadx.ai.cli.commands.GoogleServicesConfigCommand;
 import jadx.ai.cli.commands.DangerousApiMapCommand;
@@ -224,6 +225,7 @@ import jadx.ai.cli.commands.UsageCommand;
 					PackerDetectCommand.class,
 					CapabilityReportCommand.class,
 					NativeLibSecurityCommand.class,
+					JniBindingAuditCommand.class,
 					ApiEndpointExtractCommand.class,
 					GoogleServicesConfigCommand.class,
 					DangerousApiMapCommand.class,

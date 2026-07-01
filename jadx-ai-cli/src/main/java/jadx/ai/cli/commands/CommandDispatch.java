@@ -45,7 +45,7 @@ public final class CommandDispatch {
 			"accessibility-scan", "keystore-scan", "exported-provider-scan",
 			"notification-listener-scan", "sms-scan", "privacy-scan", "task-hijacking-scan",
 			"firebase-scan", "xxe-scan", "intent-redirection-scan", "cert-pinning-scan", "debug-artifact-scan", "deeplink-scan", "backup-scan", "screen-capture-scan", "otp-interception-scan", "pending-intent-scan", "content-provider-scan", "local-auth-bypass-scan", "unsafe-export-scan", "insecure-keystore-scan", "token-storage-scan", "webview-url-scan", "insecure-api-scan", "network-traffic-scan", "ad-fraud-scan", "runtime-integrity-scan", "hardcoded-crypto-scan", "permission-request-scan", "data-residue-scan", "subprocess-scan", "cryptographic-misuse-scan", "log-info-leak-scan", "broadcast-scan", "fragment-injection-scan", "unsafe-encryption-scan", "screenshot-leak-scan", "trust-boundary-scan", "insecure-deeplink-handler-scan", "insecure-file-io-scan",
-			"sdk-inventory", "bypass-hook", "packer-detect", "capability-report", "native-lib-security", "api-endpoint-extract", "google-services-config", "dangerous-api-map", "manifest-security-audit", "il2cpp-metadata-scan", "flutter-analysis", "source-quality-report", "class-inventory", "entrypoint-scan", "dex-stat", "custom-permission-audit", "apk-signature", "dead-code-report", "method-complexity", "resource-inventory", "shared-uid-audit", "device-admin-scan", "vpn-service-scan", "nfc-scan", "sensor-scan", "alarm-wakelock-scan",
+			"sdk-inventory", "bypass-hook", "packer-detect", "capability-report", "native-lib-security", "jni-binding-audit", "api-endpoint-extract", "google-services-config", "dangerous-api-map", "manifest-security-audit", "il2cpp-metadata-scan", "flutter-analysis", "source-quality-report", "class-inventory", "entrypoint-scan", "dex-stat", "custom-permission-audit", "apk-signature", "dead-code-report", "method-complexity", "resource-inventory", "shared-uid-audit", "device-admin-scan", "vpn-service-scan", "nfc-scan", "sensor-scan", "alarm-wakelock-scan",
 			"bluetooth-scan", "account-scan", "location-scan", "sim-info-scan",
 			"smali", "find-classes", "string-xref", "call-sites",
 		"apktool", "adb", "frida");
@@ -246,6 +246,8 @@ public final class CommandDispatch {
 				return applyAndRun(new CapabilityReportCommand(), args, decompiler);
 			case "native-lib-security":
 				return applyAndRun(new NativeLibSecurityCommand(), args, decompiler);
+			case "jni-binding-audit":
+				return applyAndRun(new JniBindingAuditCommand(), args, decompiler);
 			case "api-endpoint-extract":
 				return applyAndRun(new ApiEndpointExtractCommand(), args, decompiler);
 			case "google-services-config":

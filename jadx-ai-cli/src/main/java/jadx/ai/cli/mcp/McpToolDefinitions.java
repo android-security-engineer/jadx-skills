@@ -521,6 +521,10 @@ public class McpToolDefinitions {
 		tools.add(tool("jadx_native_lib_security",
 				"Security-check native .so libraries embedded in the APK (ELF analysis: NX, PIE, RELRO, canary, crypto constants)",
 				optArg("limit", "integer", "Maximum libraries to analyze", 50)));
+		tools.add(tool("jadx_jni_binding_audit",
+				"Cross-reference Java native methods against real .so Java_* exports (.dynsym) to reveal static bindings vs RegisterNatives-hidden natives",
+				optArg("package", "string", "Only audit classes under this package prefix", null),
+				optArg("limit", "integer", "Maximum native methods to audit", 1000)));
 		tools.add(tool("jadx_api_endpoint_extract",
 				"Extract API endpoints from Retrofit annotations, OkHttp usage, and URL literals in decompiled code",
 				optArg("package", "string", "Only scan classes under this package prefix", null),
