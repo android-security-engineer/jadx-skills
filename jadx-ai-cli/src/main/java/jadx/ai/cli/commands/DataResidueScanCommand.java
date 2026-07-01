@@ -82,6 +82,36 @@ public class DataResidueScanCommand extends AbstractCommand {
 	private static final Pattern SHARED_USER_ID = Pattern.compile(
 			"sharedUserId|sharedUserLabel|android:sharedUserId");
 
+	/**
+	 * A ContentProvider class — either {@code extends ContentProvider} or it declares the canonical
+	 * ContentProvider method signatures ({@code query(Uri,…)}, {@code getType(Uri)}, {@code insert(Uri,…)}).
+	 * Scoping {@code insert}/{@code update} to a provider class avoids flagging every SQLiteDatabase
+	 * call site that happens to lack a {@code delete}. Package-private for the residue test.
+	 */
+	static final Pattern CONTENT_PROVIDER_MARKER = Pattern.compile(
+			"extends\\s+ContentProvider|"
+					+ "(?:public|protected|private)?\\s*Cursor\\s+query\\s*\\(\\s*Uri|"
+					+ "(?:public|protected|private)?\\s+String\\s+getType\\s*\\(\\s*Uri|"
+					+ "(?:public|protected|private)?\\s+Uri\\s+insert\\s*\\(\\s*Uri");
+	/** A write operation on the provider (insert or update). */
+	static final Pattern PROVIDER_WRITE = Pattern.compile("\\binsert\\s*\\(|\\bupdate\\s*\\(");
+	/** A delete operation on the provider — its presence means data IS cleaned up. */
+	static final Pattern PROVIDER_DELETE = Pattern.compile("\\bdelete\\s*\\(");
+
+	/**
+	 * True iff the class is a ContentProvider that writes (insert/update) but never deletes — data
+	 * added to the provider is never cleaned up and survives uninstall. Package-private for testing.
+	 */
+	static boolean contentProviderResidueSignal(String code) {
+		if (code == null || code.isEmpty()) {
+			return false;
+		}
+		boolean isProvider = CONTENT_PROVIDER_MARKER.matcher(code).find();
+		boolean hasWrite = PROVIDER_WRITE.matcher(code).find();
+		boolean hasDelete = PROVIDER_DELETE.matcher(code).find();
+		return isProvider && hasWrite && !hasDelete;
+	}
+
 	private static final class Rule {
 		final Pattern pattern;
 		final String kind;
@@ -170,6 +200,16 @@ public class DataResidueScanCommand extends AbstractCommand {
 						break;
 					}
 				}
+			}
+
+			// Class-level: a ContentProvider that writes (insert/update) but never deletes — the
+			// content_provider_residue finding the class doc promises but RULES never emitted. Data
+			// added to such a provider survives uninstall (the provider's rows are not cleaned up).
+			if (findings.size() < limit && contentProviderResidueSignal(code)) {
+				findings.add(finding("content_provider_residue", "medium", fullName, 0,
+						"ContentProvider defines insert/update but no delete — data added to the "
+								+ "provider is never cleaned up and survives uninstall; override "
+								+ "delete() or clear rows in onUninstall / account-removal"));
 			}
 		}
 
