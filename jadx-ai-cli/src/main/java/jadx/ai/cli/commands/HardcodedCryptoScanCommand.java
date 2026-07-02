@@ -28,16 +28,20 @@ import jadx.api.JavaClass;
  * <p>Categories (first-match-wins per line, ONE/class per kind):
  * <ul>
  *   <li>{@code hardcoded_iv} — Fixed initialization vector in cipher operations
- *       (IvParameterSpec with literal byte array, "0123456789abcdef" as IV string)
+ *       (IvParameterSpec with literal byte array, "0123456789abcdef" as IV string, or the
+ *       variable-indirect {@code byte[] iv = "...".getBytes()} source line jadx emits before
+ *       {@code new IvParameterSpec(iv)})
  *       — identical ciphertext for same plaintext, enables pattern analysis</li>
  *   <li>{@code hardcoded_salt} — Static salt in PBE/KeyDerivation
  *       (PBEParameterSpec with fixed salt, hardcoded salt byte array in PBKDF2)
  *       — weakens key derivation against rainbow-table attacks</li>
  *   <li>{@code hardcoded_symmetric_key} — Symmetric key as string literal or byte
- *       array in code (AES key = "1234567890abcdef", SecretKeySpec with literal)
+ *       array in code (AES key = "1234567890abcdef", SecretKeySpec with literal, or the
+ *       variable-indirect name-gated {@code byte[] keyBytes = "...".getBytes()} source line)
  *       — key extractable from APK, no real security</li>
  *   <li>{@code hardcoded_key_bytes} — Key material as hex/base64 literal
- *       (byte[]{0x12,0x34,...}, "AQIDBA==" base64 key)
+ *       (byte[]{0x12,0x34,...}, byte[]{(byte)0x12,...} jadx cast form, byte[]{65,66,...}
+ *       pure-decimal jadx form for values &lt;128, "AQIDBA==" base64 key)
  *       — key extractable from decompiled code</li>
  *   <li>{@code hardcoded_nonce} — Fixed nonce/counter in AES-GCM/CTR
  *       (GCMParameterSpec with fixed nonce, replayed counter)
@@ -66,32 +70,54 @@ public class HardcodedCryptoScanCommand extends AbstractCommand {
 					+ "SecureRandom|PBKDF2|setSeed|KeySpec|Cipher|"
 					+ "AES|DES|RSA|Blowfish|ChaCha20|0x[0-9a-fA-F]{2}");
 
-	private static final Pattern HARDCODED_IV = Pattern.compile(
+	/**
+	 * Hardcoded IV. Covers the inline form ({@code new IvParameterSpec(new byte[]{...})}) AND the
+	 * variable-indirect source line jadx emits when the IV is extracted first:
+	 * {@code byte[] iv = "0102030405060708".getBytes(); ... new IvParameterSpec(iv);}. The sink line
+	 * {@code new IvParameterSpec(iv)} has no literal, so the inline arm misses it — the source-line arm
+	 * ({@code byte[]\s*\w*\s*=\s*"[^"]{8,}"\.getBytes}) closes that gap. The {@code {8,}} floor avoids
+	 * short-string FP. Package-private for testing.
+	 */
+	static final Pattern HARDCODED_IV = Pattern.compile(
 			"IvParameterSpec\\s*\\(\\s*(new\\s+byte\\[|\"[^\"]{8,}\")|"
 					+ "IV\\s*=\\s*\"[^\"]{8,}\"|"
 					+ "initVector\\s*=\\s*\"[^\"]{8,}\"|"
 					+ "ivSpec\\s*=\\s*new\\s+IvParameterSpec|"
-					+ "\"[0-9a-fA-F]{16,32}\"\\s*.*IvParameter");
+					+ "\"[0-9a-fA-F]{16,32}\"\\s*.*IvParameter|"
+					+ "byte\\[\\]\\s*\\w*\\s*=\\s*\"[^\"]{8,}\"\\.getBytes");
 	private static final Pattern HARDCODED_SALT = Pattern.compile(
 			"PBEParameterSpec\\s*\\(\\s*(new\\s+byte\\[|\"[^\"]+\")|"
 					+ "salt\\s*=\\s*\"[^\"]{4,}\"|"
 					+ "SALT\\s*=\\s*(new\\s+byte|\"[^\"]{4,}\")|"
 					+ "PBKDF2WithHmac.*salt|hardcodedSalt|fixedSalt");
-	private static final Pattern HARDCODED_SYMMETRIC_KEY = Pattern.compile(
+	/**
+	 * Hardcoded symmetric key. Covers the inline form ({@code new SecretKeySpec("...".getBytes(), "AES")})
+	 * AND the variable-indirect source line jadx emits when the key is extracted first:
+	 * {@code byte[] keyBytes = "MySecretKey123".getBytes(); ... new SecretKeySpec(keyBytes, "AES");}. The
+	 * sink line {@code new SecretKeySpec(keyBytes, ...)} has no literal, so the inline arm misses it — the
+	 * source-line arm closes that gap. The source-line arm is name-gated
+	 * ({@code \w*(?:key|Key|aes|Aes|secret|Secret)\w*|KEY[A-Z_]*}) so a generic
+	 * {@code byte[] data = "...".getBytes()} (non-key buffer) does not fire. Package-private for testing.
+	 */
+	static final Pattern HARDCODED_SYMMETRIC_KEY = Pattern.compile(
 			"SecretKeySpec\\s*\\(\\s*(\"[^\"]+\"|new\\s+byte)|"
 					+ "AES_KEY\\s*=\\s*\"[^\"]+\"|"
 					+ "SECRET_KEY\\s*=\\s*\"[^\"]+\"|"
 					+ "ENCRYPTION_KEY\\s*=\\s*\"[^\"]+\"|"
-					+ "aesKey\\s*=\\s*\"[^\"]+\"");
+					+ "aesKey\\s*=\\s*\"[^\"]+\"|"
+					+ "byte\\[\\]\\s*(?:\\w*(?:key|Key|aes|Aes|secret|Secret)\\w*|KEY[A-Z_]*)\\s*=\\s*\"[^\"]{8,}\"\\.getBytes");
 	/**
 	 * Hardcoded key material as a byte-array literal or base64 string. Covers the {@code new byte[]{0x..}}
-	 * hex-literal form AND the jadx-specific {@code new byte[]{(byte)0x12, (byte)0x34}} cast form — jadx
-	 * decompiles {@code byte} literals with an explicit {@code (byte)} cast because Java byte literals
-	 * overflow signed-byte range, so the bare {@code 0x} arm alone missed the most common decompiled
-	 * key-array shape. Package-private for testing.
+	 * hex-literal form, the jadx-specific {@code new byte[]{(byte)0x12, (byte)0x34}} cast form (jadx casts
+	 * byte literals because signed-byte overflow), AND the {@code new byte[]{65, 66, 67}} pure-decimal form
+	 * — jadx emits byte values &lt;128 as bare decimals (no {@code 0x} prefix, no {@code (byte)} cast), so
+	 * the hex/cast arms alone missed the most common dex2c/packed-layout key-array shape. The decimal arm
+	 * requires the digit to be followed by {@code ,} or {@code }} so a method signature
+	 * {@code void f(byte[] p)} or a sized {@code new byte[16]} (no {@code \{} body) does not fire.
+	 * Package-private for testing.
 	 */
 	static final Pattern HARDCODED_KEY_BYTES = Pattern.compile(
-			"byte\\[\\]\\s*\\{\\s*(?:0x[0-9a-fA-F]|\\(byte\\)\\s*0x[0-9a-fA-F])|"
+			"byte\\[\\]\\s*\\{\\s*(?:0x[0-9a-fA-F]|\\(byte\\)\\s*0x[0-9a-fA-F]|\\d{1,3}\\s*[,}])|"
 					+ "\"[A-Za-z0-9+/]{20,}={0,2}\"\\s*.*SecretKeySpec|"
 					+ "keyBytes\\s*=\\s*\"[^\"]+\"|"
 					+ "KEY_BYTES\\s*=\\s*(new\\s+byte|\"[^\"]+\")");

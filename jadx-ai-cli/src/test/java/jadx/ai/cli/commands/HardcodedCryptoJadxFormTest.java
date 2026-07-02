@@ -11,12 +11,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * Guards the jadx-cast-form and no-suffix-numeric-seed arms added to
  * {@link HardcodedCryptoScanCommand}.
  *
- * <p>Two decompiler-specific shapes were silently missed:
+ * <p>Three decompiler-specific shapes were silently missed:
  * <ul>
  *   <li>{@code HARDCODED_KEY_BYTES} matched {@code byte[]{0x12, ...}} but not the jadx cast form
  *       {@code byte[]{(byte)0x12, (byte)0x34}} — jadx emits an explicit {@code (byte)} cast on
  *       byte literals because Java byte literals overflow signed-byte range, so this is the most
  *       common decompiled key-array shape.</li>
+ *   <li>{@code HARDCODED_KEY_BYTES} also now matches the pure-decimal form {@code byte[]{1, 2, 3, 4}}
+ *       — jadx emits byte values &lt;128 as bare decimals (no {@code 0x}, no cast), the common
+ *       dex2c/packed-layout shape; previously suppressed as noise (a real false negative).</li>
  *   <li>{@code HARDCODED_SEED} matched {@code setSeed(123L)} but not the no-suffix
  *       {@code setSeed(123)} form jadx frequently emits.</li>
  * </ul>
@@ -53,9 +56,10 @@ class HardcodedCryptoJadxFormTest {
 	}
 
 	@Test
-	void nonHexByteArrayDoesNotFire() {
-		assertFalse(KEY_BYTES.matcher("byte[] data = new byte[]{1, 2, 3, 4};").find(),
-				"decimal byte literals are not the hex key-array signature — must not fire (avoid noise)");
+	void decimalByteArrayFires() {
+		assertTrue(KEY_BYTES.matcher("byte[] data = new byte[]{1, 2, 3, 4};").find(),
+				"jadx emits byte values <128 as bare decimals (no 0x, no (byte) cast), so a pure-decimal "
+						+ "byte-array literal is a real dex2c/packed-layout key shape — must fire");
 	}
 
 	@Test
