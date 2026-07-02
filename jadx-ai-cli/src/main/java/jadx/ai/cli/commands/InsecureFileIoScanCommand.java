@@ -66,15 +66,19 @@ public class InsecureFileIoScanCommand extends AbstractCommand {
 					+ "writeFile|writeBytes|BufferedWriter|FileWriter|"
 					+ "getFilesDir|getCacheDir|getDir");
 
-	private static final Pattern WORLD_READABLE = Pattern.compile(
-			"MODE_WORLD_READABLE|openFileOutput.*MODE_WORLD_READABLE|"
-					+ "setReadable\\s*\\(\\s*true\\s*,\\s*false|"
-					+ "chmod\\s+644|chmod\\s+664|"
-					+ "MODE_WORLD_READABLE.*openFileOutput");
-	private static final Pattern WORLD_WRITABLE = Pattern.compile(
-			"MODE_WORLD_WRITEABLE|openFileOutput.*MODE_WORLD_WRITEABLE|"
-					+ "setWritable\\s*\\(\\s*true\\s*,\\s*false|"
-					+ "chmod\\s+666|chmod\\s+646");
+	// MODE_WORLD_READABLE = 1, MODE_WORLD_WRITEABLE = 2 (both `static final int`, folded to literals
+	// by javac/d8, so jadx emits `openFileOutput("f", 1)` and the identifier NEVER appears). The old
+	// identifier-only `MODE_WORLD_READABLE` arm was dead code. The literal arms match the mode arg of
+	// openFileOutput / getSharedPreferences / getDir — mode 1 (READABLE), 3 (READABLE|WRITABLE). The
+	// setReadable(true,false) / chmod 644 arms stay (non-folded). Package-private for testing.
+	static final Pattern WORLD_READABLE = Pattern.compile(
+			"openFileOutput\\s*\\([^,]*,\\s*(?:1|3)\\b|getSharedPreferences\\s*\\([^,]*,\\s*(?:1|3)\\b|getDir\\s*\\([^,]*,\\s*(?:1|3)\\b|"
+					+ "MODE_WORLD_READABLE|setReadable\\s*\\(\\s*true\\s*,\\s*false|chmod\\s+644|chmod\\s+664");
+	// MODE_WORLD_WRITEABLE = 2; mode 2 (WRITABLE), 3 (READABLE|WRITABLE), 6 (WRITABLE|PRIVATE bit? —
+	// actually MODE_WORLD_WRITEABLE|MODE_PRIVATE=2|0=2; the |3| case is shared with READABLE above).
+	static final Pattern WORLD_WRITABLE = Pattern.compile(
+			"openFileOutput\\s*\\([^,]*,\\s*(?:2|3)\\b|getSharedPreferences\\s*\\([^,]*,\\s*(?:2|3)\\b|getDir\\s*\\([^,]*,\\s*(?:2|3)\\b|"
+					+ "MODE_WORLD_WRITEABLE|setWritable\\s*\\(\\s*true\\s*,\\s*false|chmod\\s+666|chmod\\s+646");
 	private static final Pattern SENSITIVE_UNENCRYPTED = Pattern.compile(
 			"FileOutputStream.*(?:password|token|secret|key|credential|auth|session)|"
 					+ "openFileOutput.*(?:password|token|secret|key|credential)|"

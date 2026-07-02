@@ -59,13 +59,24 @@ public class XxeScanCommand extends AbstractCommand {
 					+ "XMLReaderFactory\\.createXMLReader\\s*\\(|XmlPullParserFactory\\.newInstance\\s*\\(|"
 					+ "new\\s+SAXBuilder\\s*\\(|new\\s+SAXReader\\s*\\(|newDocumentBuilder\\s*\\(|newSAXParser\\s*\\(");
 
-	/** Any of these in the same class = the parser is hardened against entity expansion / external refs. */
-	private static final Pattern HARDENED = Pattern.compile(
-			"FEATURE_SECURE_PROCESSING|disallow-doctype-decl|"
+	/**
+	 * Any of these in the same class = the parser is hardened against entity expansion / external refs.
+	 * NOTE: {@code XMLConstants.FEATURE_SECURE_PROCESSING} / {@code ACCESS_EXTERNAL_DTD} /
+	 * {@code ACCESS_EXTERNAL_SCHEMA} are {@code static final String} constants, folded to their string
+	 * literal values by javac/d8, so jadx emits the literal URL (e.g.
+	 * {@code "http://javax.xml.XMLConstants/feature/secure-processing"}) and the identifiers NEVER appear.
+	 * The old identifier arms were dead code, so a parser hardened ONLY via FEATURE_SECURE_PROCESSING
+	 * was misclassified as unhardened (false-positive amplifier: {@code xxe_unhardened_parser} high).
+	 * Now the literal-value substrings ({@code secure-processing}, {@code accessExternalDTD},
+	 * {@code accessExternalSchema}) are matched; {@code disallow-doctype-decl} was already a literal
+	 * value and stays. Package-private for testing.
+	 */
+	static final Pattern HARDENED = Pattern.compile(
+			"secure-processing|disallow-doctype-decl|"
 					+ "setExpandEntityReferences\\s*\\(\\s*false|"
 					+ "external-general-entities|external-parameter-entities|"
-					+ "ACCESS_EXTERNAL_DTD|ACCESS_EXTERNAL_SCHEMA|"
-					+ "setXIncludeAware\\s*\\(\\s*false|XMLConstants\\.FEATURE_SECURE_PROCESSING");
+					+ "accessExternalDTD|accessExternalSchema|"
+					+ "setXIncludeAware\\s*\\(\\s*false|FEATURE_SECURE_PROCESSING|ACCESS_EXTERNAL_DTD|ACCESS_EXTERNAL_SCHEMA");
 
 	/**
 	 * Explicit re-enable of a dangerous XML feature — high regardless of other hardening.
