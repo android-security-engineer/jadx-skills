@@ -13,6 +13,8 @@ import picocli.CommandLine.Option;
 import jadx.ai.cli.output.JsonOutput;
 import jadx.api.JadxDecompiler;
 import jadx.api.JavaClass;
+import jadx.api.ResourceFile;
+import jadx.api.ResourceType;
 
 /**
  * Extracts API endpoints from decompiled code by scanning Retrofit HTTP annotations,
@@ -20,8 +22,15 @@ import jadx.api.JavaClass;
  * {@code mobile-security-mcp}'s {@code api-extractor.ts} (which parses smali for
  * Retrofit annotations and OkHttp fields) and reimplements it natively over jadx's
  * parsed Java model — producing structured endpoint data without any external tooling.
+ *
+ * <p>Besides the structured Retrofit/OkHttp/Volley extractors, a generic {@link #URL_LITERAL}
+ * fallback harvests any {@code http(s)://...} literal in code (including URLs assembled via
+ * {@code String.format("%s/api", "https://...")}, where the URL survives as a format argument
+ * and the {@code .url("...")}-anchored arms miss it), and resources (strings.xml/ARSC) are
+ * scanned for URLs stored outside code ({@code getString(R.string.base_url)}). Both close
+ * silent-FN gaps where the URL never appears as a direct {@code .url("...")} argument.
  */
-@Command(name = "api-endpoint-extract", description = "Extract API endpoints from Retrofit annotations, OkHttp usage, and URL literals")
+@Command(name = "api-endpoint-extract", description = "Extract API endpoints from Retrofit annotations, OkHttp usage, URL literals, and string resources")
 public class ApiEndpointExtractCommand extends AbstractCommand {
 
 	@Option(names = { "-p", "--package" }, description = "Only scan classes under this package prefix")
@@ -29,6 +38,9 @@ public class ApiEndpointExtractCommand extends AbstractCommand {
 
 	@Option(names = { "--limit" }, description = "Maximum endpoints to return", defaultValue = "200")
 	protected int limit = 200;
+
+	@Option(names = { "--no-resources" }, description = "Skip strings.xml/ARSC resources (scan code only)")
+	protected boolean noResources;
 
 	/** Retrofit HTTP annotation patterns. */
 	private static final Pattern RETROFIT_GET = Pattern.compile("@GET\\s*\\(\"([^\"]+)\"\\)");
@@ -45,8 +57,14 @@ public class ApiEndpointExtractCommand extends AbstractCommand {
 	private static final Pattern OKHTTP_BUILDER = Pattern.compile("Request\\.Builder\\(\\)");
 	private static final Pattern VOLLEY_URL = Pattern.compile("JsonObjectRequest\\s*\\(\\s*\\d+\\s*,\\s*\"([^\"]+)\"");
 
-	/** Generic URL pattern. */
-	private static final Pattern URL_LITERAL = Pattern.compile("https?://[\\w./\\-?&=%+#:{}]+");
+	/**
+	 * Generic URL fallback. Harvests any {@code http(s)://...} literal in code, regardless of whether
+	 * it appears inside a {@code .url("...")} call — this catches URLs assembled via
+	 * {@code String.format("%s/api", "https://host")} (the URL survives as a format argument the
+	 * {@code .url(}-anchored arms miss) and URLs assigned to a field then passed indirectly. Package-private
+	 * for testing.
+	 */
+	static final Pattern URL_LITERAL = Pattern.compile("https?://[\\w./\\-?&=%+#:{}]+");
 
 	/** Base URL from Retrofit.Builder or static field. */
 	private static final Pattern BASE_URL_FIELD = Pattern.compile("(?:static\\s+)?(?:final\\s+)?String\\s+BASE_URL\\s*=\\s*\"(https?://[^\"]+)\"", Pattern.CASE_INSENSITIVE);
@@ -56,6 +74,10 @@ public class ApiEndpointExtractCommand extends AbstractCommand {
 		this.packageFilter = (String) args.get("package");
 		if (args.containsKey("limit")) {
 			this.limit = ((Number) args.get("limit")).intValue();
+		}
+		Object nr = args.get("noResources");
+		if (nr != null) {
+			this.noResources = Boolean.TRUE.equals(nr) || "true".equals(nr.toString());
 		}
 	}
 
@@ -137,6 +159,59 @@ public class ApiEndpointExtractCommand extends AbstractCommand {
 				ep.put("className", fullName);
 				endpoints.add(ep);
 			}
+
+			// Generic URL-literal fallback: harvest any http(s):// literal not already caught by the
+			// structured arms — notably URLs assembled via String.format("%s/api", "https://host") (the
+			// URL survives as a format argument) and URLs passed indirectly via a field. Dedup handles
+			// overlaps with the okhttp/volley arms above.
+			if (endpoints.size() < limit) {
+				Matcher urlM = URL_LITERAL.matcher(code);
+				while (urlM.find() && endpoints.size() < limit) {
+					Map<String, Object> ep = new LinkedHashMap<>();
+					ep.put("method", "UNKNOWN");
+					ep.put("url", urlM.group());
+					ep.put("source", "url-literal");
+					ep.put("className", fullName);
+					endpoints.add(ep);
+				}
+			}
+		}
+
+		// Resource scan: URLs stored in strings.xml/ARSC (loaded via getString(R.string.x)) never appear
+		// in code as a literal, so the code-only arms above miss them entirely — a silent FN for apps that
+		// externalize their base URL. Mirrors FirebaseScanCommand/SecretsScanCommand's resource path.
+		if (!noResources) {
+			for (ResourceFile res : decompiler.getResources()) {
+				if (endpoints.size() >= limit) {
+					break;
+				}
+				ResourceType type = res.getType();
+				if (type != ResourceType.XML && type != ResourceType.ARSC && type != ResourceType.MANIFEST) {
+					continue;
+				}
+				try {
+					var container = res.loadContent();
+					if (container == null) {
+						continue;
+					}
+					var codeInfo = container.getText();
+					if (codeInfo == null) {
+						continue;
+					}
+					String text = codeInfo.toString();
+					Matcher resM = URL_LITERAL.matcher(text);
+					while (resM.find() && endpoints.size() < limit) {
+						Map<String, Object> ep = new LinkedHashMap<>();
+						ep.put("method", "UNKNOWN");
+						ep.put("url", resM.group());
+						ep.put("source", "resource");
+						ep.put("className", res.getOriginalName());
+						endpoints.add(ep);
+					}
+				} catch (Exception ignored) {
+					// skip unreadable resources
+				}
+			}
 		}
 
 		// Second pass: resolve relative paths with detected base URL
@@ -201,6 +276,9 @@ public class ApiEndpointExtractCommand extends AbstractCommand {
 			args.put("package", packageFilter);
 		}
 		args.put("limit", limit);
+		if (noResources) {
+			args.put("noResources", true);
+		}
 		return args;
 	}
 }

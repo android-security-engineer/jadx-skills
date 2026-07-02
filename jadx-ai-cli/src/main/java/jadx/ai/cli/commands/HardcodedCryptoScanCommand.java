@@ -79,7 +79,12 @@ public class HardcodedCryptoScanCommand extends AbstractCommand {
 	 * short-string FP. Package-private for testing.
 	 */
 	static final Pattern HARDCODED_IV = Pattern.compile(
-			"IvParameterSpec\\s*\\(\\s*(new\\s+byte\\[|\"[^\"]{8,}\")|"
+			// The inline `IvParameterSpec("...")` arm allows an optional `(` after `\s*`: when an IV is
+			// assembled via StringBuilder.append("part1").append("part2") (a common obfuscation idiom),
+			// javac/d8 constant-folds the chain and jadx emits `IvParameterSpec(("0102030405060708").getBytes())`
+			// — an EXTRA paren around the folded literal. Without `\(?` the inline arm missed this form
+			// (a high-severity FN on the most common key/IV obfuscation trick). Verified via javac→d8→jadx.
+			"IvParameterSpec\\s*\\(\\s*\\(?\\s*(new\\s+byte\\[|\"[^\"]{8,}\")|"
 					+ "IV\\s*=\\s*\"[^\"]{8,}\"|"
 					+ "initVector\\s*=\\s*\"[^\"]{8,}\"|"
 					+ "ivSpec\\s*=\\s*new\\s+IvParameterSpec|"
@@ -107,12 +112,25 @@ public class HardcodedCryptoScanCommand extends AbstractCommand {
 	 * {@code byte[] data = "...".getBytes()} (non-key buffer) does not fire. Package-private for testing.
 	 */
 	static final Pattern HARDCODED_SYMMETRIC_KEY = Pattern.compile(
-			"SecretKeySpec\\s*\\(\\s*(\"[^\"]+\"|new\\s+byte)|"
+			// The inline `SecretKeySpec("...")` arm allows an optional `(` after `\s*`: when a key is
+			// assembled via StringBuilder.append("part1").append("part2") (a common obfuscation idiom),
+			// javac/d8 constant-folds the chain and jadx emits `SecretKeySpec(("MySuperSecretKey123456").getBytes(), "AES")`
+			// — an EXTRA paren around the folded literal. Without `\(?` this high-severity rule missed the
+			// most common key-obfuscation trick. Verified via javac→d8→jadx.
+			"SecretKeySpec\\s*\\(\\s*\\(?\\s*(\"[^\"]+\"|new\\s+byte)|"
 					+ "AES_KEY\\s*=\\s*\"[^\"]+\"|"
 					+ "SECRET_KEY\\s*=\\s*\"[^\"]+\"|"
 					+ "ENCRYPTION_KEY\\s*=\\s*\"[^\"]+\"|"
 					+ "aesKey\\s*=\\s*\"[^\"]+\"|"
-					+ "byte\\[\\]\\s*(?:\\w*(?:key|Key|aes|Aes|secret|Secret)\\w*|KEY[A-Z_]*)\\s*=\\s*\"[^\"]{8,}\"\\.getBytes");
+					+ "byte\\[\\]\\s*(?:\\w*(?:key|Key|aes|Aes|secret|Secret)\\w*|KEY[A-Z_]*)\\s*=\\s*\"[^\"]{8,}\"\\.getBytes|"
+						// Field-indirect form: a `static final String KEY = "..."` field whose value flows to
+						// SecretKeySpec on another line (the sink line has no literal). jadx does NOT inline a
+						// `static final String` field into its use sites (unlike `static final int`), so the
+						// declaration survives and is the only place the literal appears. The field name must be
+						// an EXACT key-ish token (not a substring) to avoid flagging `KEYWORDS`/`keyDesc` — the
+						// recurring .*-substring FP pattern. The CRYPTO_MARKER class gate (SecretKeySpec/Cipher)
+						// further scopes this to crypto classes. Verified via javac→d8→jadx.
+						+ "(?:static\\s+)?(?:final\\s+)?String\\s+(?:KEY|SECRET_KEY|AES_KEY|ENCRYPTION_KEY|API_KEY|PRIVATE_KEY|aesKey|secretKey|encryptionKey|apiKey|privateKey)\\b\\s*=\\s*\"[^\"]{8,}\"");
 	/**
 	 * Hardcoded key material as a byte-array literal or base64 string. Covers the {@code new byte[]{0x..}}
 	 * hex-literal form, the jadx-specific {@code new byte[]{(byte)0x12, (byte)0x34}} cast form (jadx casts
@@ -128,8 +146,16 @@ public class HardcodedCryptoScanCommand extends AbstractCommand {
 					+ "\"[A-Za-z0-9+/]{20,}={0,2}\"\\s*.*SecretKeySpec|"
 					+ "keyBytes\\s*=\\s*\"[^\"]+\"|"
 					+ "KEY_BYTES\\s*=\\s*(new\\s+byte|\"[^\"]+\")");
-	private static final Pattern HARDCODED_NONCE = Pattern.compile(
-			"GCMParameterSpec\\s*\\(\\s*[0-9]+\\s*,\\s*(new\\s+byte\\[|\"[^\"]+\")|"
+	/**
+	 * Hardcoded GCM nonce. The inline {@code GCMParameterSpec(bits, "...")} arm allows an optional
+	 * {@code (} after the comma: when the nonce is assembled via StringBuilder.append(...).append(...)
+	 * (a common obfuscation idiom), javac/d8 constant-folds the chain and jadx emits
+	 * {@code GCMParameterSpec(128, ("01020304050607").getBytes())} — an EXTRA paren around the folded
+	 * literal. Without {@code \(?} this high-severity rule missed the obfuscated form. Verified via
+	 * javac&#8594;d8&#8594;jadx. Package-private for testing.
+	 */
+	static final Pattern HARDCODED_NONCE = Pattern.compile(
+			"GCMParameterSpec\\s*\\(\\s*[0-9]+\\s*,\\s*\\(?\\s*(new\\s+byte\\[|\"[^\"]+\")|"
 					+ "nonce\\s*=\\s*\"[^\"]{6,}\"|"
 					+ "GCM_NONCE\\s*=\\s*\"[^\"]+\"|"
 					+ "fixedNonce|constantNonce");

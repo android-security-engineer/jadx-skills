@@ -306,9 +306,10 @@ public class McpToolDefinitions {
 				optArg("limit", "integer", "Maximum number of findings", 200)));
 
 		tools.add(tool("jadx_network_traffic_scan",
-				"Detect network-traffic security issues (MASVS MSTG-NETWORK-1/2): cleartext HTTP URLs (incl. bare \"http://\" scheme assembled at runtime), no hostname verification (ALLOW_ALL / anonymous HostnameVerifier returning true), OkHttp CLEARTEXT spec / no-TLS builder, insecure Retrofit http base URL, trust-all X509TrustManager, low timeouts. Distinct from ssl-scan (TLS implementation) and network-security-config (NSC policy)",
+				"Detect network-traffic security issues (MASVS MSTG-NETWORK-1/2): cleartext HTTP URLs (incl. bare \"http://\" scheme assembled at runtime AND http:// URLs stored in strings.xml/ARSC loaded via getString), no hostname verification (ALLOW_ALL / anonymous HostnameVerifier returning true), OkHttp CLEARTEXT spec / no-TLS builder, insecure Retrofit http base URL, trust-all X509TrustManager, low timeouts. Distinct from ssl-scan (TLS implementation) and network-security-config (NSC policy)",
 				optArg("package", "string", "Only scan classes under this package prefix", null),
-				optArg("limit", "integer", "Maximum number of findings", 200)));
+				optArg("limit", "integer", "Maximum number of findings", 200),
+				optArg("noResources", "boolean", "Skip strings.xml/ARSC resources (scan code only)", false)));
 
 		tools.add(tool("jadx_ad_fraud_scan",
 				"Detect ad-fraud / SDK abuse (MASVS MSTG-PRIVACY-3/RESILIENCE-4): click fraud (performClick/clickAd), reward-ad manipulation, advertising ID tracking, device fingerprinting for ad targeting (AppsFlyer/Adjust/Branch/Kochava), hidden ad components, ad SDK inventory (AdMob/Facebook/Unity/AppLovin/IronSource/Vungle/Chartboost/StartApp/InMobi)",
@@ -526,9 +527,10 @@ public class McpToolDefinitions {
 				optArg("package", "string", "Only audit classes under this package prefix", null),
 				optArg("limit", "integer", "Maximum native methods to audit", 1000)));
 		tools.add(tool("jadx_api_endpoint_extract",
-				"Extract API endpoints from Retrofit annotations, OkHttp usage, and URL literals in decompiled code",
+				"Extract API endpoints from Retrofit annotations, OkHttp usage, URL literals (incl. URLs assembled via String.format), and http(s):// URLs stored in strings.xml/ARSC resources",
 				optArg("package", "string", "Only scan classes under this package prefix", null),
-				optArg("limit", "integer", "Maximum endpoints to return", 200)));
+				optArg("limit", "integer", "Maximum endpoints to return", 200),
+				optArg("noResources", "boolean", "Skip strings.xml/ARSC resources (scan code only)", false)));
 		tools.add(tool("jadx_google_services_config",
 				"Extract Google/Firebase service configuration from APK resources and decompiled code",
 				optArg("limit", "integer", "Maximum findings", 100)));

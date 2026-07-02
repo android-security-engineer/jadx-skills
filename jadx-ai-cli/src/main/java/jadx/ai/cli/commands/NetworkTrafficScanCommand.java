@@ -14,6 +14,8 @@ import picocli.CommandLine.Option;
 import jadx.ai.cli.output.JsonOutput;
 import jadx.api.JadxDecompiler;
 import jadx.api.JavaClass;
+import jadx.api.ResourceFile;
+import jadx.api.ResourceType;
 
 /**
  * Network-traffic security scanner — MASVS MSTG-NETWORK-1/2.
@@ -59,6 +61,9 @@ public class NetworkTrafficScanCommand extends AbstractCommand {
 
 	@Option(names = { "--limit" }, description = "Maximum number of findings", defaultValue = "200")
 	protected int limit = 200;
+
+	@Option(names = { "--no-resources" }, description = "Skip strings.xml/ARSC resources (scan code only)")
+	protected boolean noResources;
 
 	/** Gate: only scan classes that make network requests. */
 	private static final Pattern NETWORK_MARKER = Pattern.compile(
@@ -162,6 +167,10 @@ public class NetworkTrafficScanCommand extends AbstractCommand {
 		if (args.containsKey("limit") && args.get("limit") != null) {
 			this.limit = ((Number) args.get("limit")).intValue();
 		}
+		Object nr = args.get("noResources");
+		if (nr != null) {
+			this.noResources = Boolean.TRUE.equals(nr) || "true".equals(nr.toString());
+		}
 	}
 
 	@Override
@@ -240,6 +249,47 @@ public class NetworkTrafficScanCommand extends AbstractCommand {
 			}
 		}
 
+		// Resource scan: a cleartext http:// URL stored in strings.xml/ARSC and loaded via
+		// getString(R.string.x) NEVER appears in code as a literal, so the class-loop above (gated by
+		// NETWORK_MARKER requiring an in-code http:// token) skips the whole class — a silent FN that
+		// also masked the cleartext traffic from hasCleartextTraffic. Scan resources directly. ONE/url.
+		TreeSet<String> reportedResUrls = new TreeSet<>();
+		if (!noResources) {
+			for (ResourceFile res : decompiler.getResources()) {
+				if (findings.size() >= limit) {
+					break;
+				}
+				ResourceType type = res.getType();
+				if (type != ResourceType.XML && type != ResourceType.ARSC && type != ResourceType.MANIFEST) {
+					continue;
+				}
+				try {
+					var container = res.loadContent();
+					if (container == null) {
+						continue;
+					}
+					var codeInfo = container.getText();
+					if (codeInfo == null) {
+						continue;
+					}
+					String text = codeInfo.toString();
+					var m = HTTP_URL.matcher(text);
+					while (m.find() && findings.size() < limit) {
+						String url = m.group();
+						if (reportedResUrls.add(url)) {
+							findings.add(finding("cleartext_http", "medium", res.getOriginalName(), 0,
+									"Cleartext http:// URL stored in a string resource (loaded via "
+											+ "getString(R.string.*)) — sent over HTTP; move to https:// and "
+											+ "enforce NSC cleartext-off"));
+							hasCleartextTraffic = true;
+						}
+					}
+				} catch (Exception ignored) {
+					// skip unreadable resources
+				}
+			}
+		}
+
 		Map<String, Object> data = new LinkedHashMap<>();
 		data.put("findings", findings);
 		data.put("count", findings.size());
@@ -271,6 +321,9 @@ public class NetworkTrafficScanCommand extends AbstractCommand {
 			args.put("package", packageFilter);
 		}
 		args.put("limit", limit);
+		if (noResources) {
+			args.put("noResources", true);
+		}
 		return args;
 	}
 }
