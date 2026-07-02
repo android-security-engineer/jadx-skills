@@ -36,7 +36,9 @@ import jadx.api.JavaClass;
  *   <li>{@code deeplink_class_loading} — URI parameter used for Class.forName or
  *       Fragment.instantiate — code injection</li>
  *   <li>{@code deeplink_auth_decision} — URI parameter used for auth decision —
- *       privilege escalation via deep-link parameters</li>
+ *       privilege escalation via deep-link parameters; detected across lines
+ *       (class-scope deep-link source on one line flows into an auth-decision
+ *       sink on another), because jadx puts the keyword on the decision line</li>
  *   <li>{@code deeplink_handler} — getIntent().getData()/getAction() in Activity —
  *       inventory of deep-link handlers</li>
  * </ul>
@@ -131,13 +133,35 @@ public class InsecureDeeplinkHandlerScanCommand extends AbstractCommand {
 				|| WEBVIEW_SINK.matcher(line).find()
 				|| CLASS_LOAD_SINK.matcher(line).find();
 	}
-	private static final Pattern AUTH_DECISION = Pattern.compile(
-			"getQueryParameter.*(?:isAdmin|isRoot|role|auth|token|session)|"
-					+ "getData.*(?:isAdmin|isRoot|role|auth)|"
-					+ "deeplink.*(?:token|session|auth|login)");
+	/**
+	 * Auth-decision sink reachable from a deep-link parameter — matched <b>per line</b> when the class also
+	 * has a {@link #DEEPLINK_SOURCE}. The old same-line {@code AUTH_DECISION} AND
+	 * ({@code getQueryParameter.*(?:isAdmin|role|auth|token|session)}) only fired when the source
+	 * extraction and the auth check shared a line; the common jadx form is cross-line
+	 * ({@code String role = uri.getQueryParameter("role");} then {@code if (role.equals("admin")) { grantAdmin(); }},
+	 * or {@code String t = uri.getQueryParameter("t"); verify(t);} where the keyword lives on the decision line,
+	 * not the extraction line). Package-private for testing.
+	 */
+	static final Pattern AUTH_DECISION_SINK = Pattern.compile(
+			"(?:isAdmin|isRoot|isAuthenticated|isLoggedIn|hasPermission|grantAdmin|elevate|setRole|"
+					+ "verifyToken|validateToken|checkPermission|setPrivilege|setAccessLevel|"
+					+ "switchUser|becomeAdmin|grantPermission|authorize)"
+					+ "\\s*\\(|"
+					+ "(?:role|auth|token|session|privilege|accessLevel|permission)"
+					+ "\\s*\\.\\s*(?:equals|equalsIgnoreCase|compareTo|contains)\\s*\\(|"
+					+ "\"(?:admin|root|superuser|authenticated|granted|allowed)\"\\s*\\.\\s*(?:equals|equalsIgnoreCase)");
+
 	private static final Pattern HANDLER = Pattern.compile(
 			"getIntent\\s*\\(\\s*\\)\\.getData|getData\\s*\\(\\)|"
 					+ "onNewIntent|ACTION_VIEW|getQueryParameter");
+
+	/**
+	 * True iff the line is an auth-decision sink reached from a deep-link parameter on another line —
+	 * the cross-line deeplink_auth_decision signal. Package-private for testing.
+	 */
+	static boolean deeplinkAuthDecisionSignal(boolean classHasDeepLinkSource, String line) {
+		return classHasDeepLinkSource && line != null && AUTH_DECISION_SINK.matcher(line).find();
+	}
 
 	private static final class Rule {
 		final Pattern pattern;
@@ -159,9 +183,8 @@ public class InsecureDeeplinkHandlerScanCommand extends AbstractCommand {
 		// deeplink_sql_injection / deeplink_webview_load / deeplink_class_loading are likewise handled
 		// separately (class-scoped DEEPLINK_SOURCE ∧ per-line SQL_SINK/WEBVIEW_SINK/CLASS_LOAD_SINK) —
 		// see deeplinkSinkSignal — for the same cross-line reason.
-		new Rule(AUTH_DECISION, "deeplink_auth_decision", "high",
-				"Deep-link parameter used for auth decision — privilege escalation "
-						+ "via crafted URL parameters; never trust URL data for auth"),
+		// deeplink_auth_decision is likewise handled separately (class-scoped DEEPLINK_SOURCE ∧ per-line
+		// AUTH_DECISION_SINK) — see deeplinkAuthDecisionSignal — for the same cross-line reason.
 		new Rule(HANDLER, "deeplink_handler", "info",
 				"Deep-link handler — Activity receives and processes deep-link data; "
 						+ "ensure all URI data is validated before use"),
@@ -209,6 +232,7 @@ public class InsecureDeeplinkHandlerScanCommand extends AbstractCommand {
 			// Per-line rule detection (first-match-wins, ONE/class per kind)
 			TreeSet<String> reportedKinds = new TreeSet<>();
 			boolean reportedPathTraversal = false;
+			boolean reportedAuthDecision = false;
 			String[] lines = code.split("\n", -1);
 			for (int i = 0; i < lines.length && findings.size() < limit; i++) {
 				String line = lines[i];
@@ -256,6 +280,23 @@ public class InsecureDeeplinkHandlerScanCommand extends AbstractCommand {
 						reportedKinds.add("deeplink_class_loading");
 						highSeverityCount++;
 					}
+					continue;
+				}
+
+				// Class-scoped deeplink_auth_decision: first AUTH_DECISION_SINK line of a class that
+				// takes a deep-link URI. Covers the cross-line form jadx emits — the keyword lives on
+				// the decision line, not the URI-extraction line:
+				//   String role = uri.getQueryParameter("role");  // source line, no auth keyword
+				//   if (role.equals("admin")) { grantAdmin(); }   // sink line, the auth decision
+				if (!reportedAuthDecision
+						&& deeplinkAuthDecisionSignal(classHasDeepLinkSource, line)) {
+					findings.add(finding("deeplink_auth_decision", "high", fullName, i + 1,
+							"Deep-link parameter used for auth decision — privilege escalation "
+									+ "via crafted URL parameters; never trust URL data for auth, "
+									+ "verify against server-side state"));
+					reportedAuthDecision = true;
+					reportedKinds.add("deeplink_auth_decision");
+					highSeverityCount++;
 					continue;
 				}
 

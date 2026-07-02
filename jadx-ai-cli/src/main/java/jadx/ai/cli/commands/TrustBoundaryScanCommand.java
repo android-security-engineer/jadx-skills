@@ -38,8 +38,10 @@ import jadx.api.JavaClass;
  *       Bundle from Intent can be forged by any sender</li>
  *   <li>{@code unvalidated_intent_action} — Action from received Intent used for
  *       branching without validation — attacker can set any action string</li>
- *   <li>{@code external_data_sql} — Intent/Bundle data used directly in SQL —
- *       SQL injection via untrusted input</li>
+ *   <li>{@code external_data_sql} — Intent/Bundle data used in SQL —
+ *       SQL injection via untrusted input; detected across lines (class-scope
+ *       IPC source on one line flows into a SQL sink on another), because jadx
+ *       decompiles source extraction and the sink separately</li>
  * </ul>
  *
  * Returns {@code {findings:[{kind,severity,className,lineNumber,detail}], count,
@@ -81,10 +83,21 @@ public class TrustBoundaryScanCommand extends AbstractCommand {
 			"getAction\\s*\\(\\)\\s*\\.equals|getAction.*equalsIgnoreCase|"
 					+ "ACTION_.*equals.*getAction|"
 					+ "if\\s*\\(.*getAction\\s*\\(\\)|switch\\s*\\(.*getAction");
-	private static final Pattern EXTERNAL_DATA_SQL = Pattern.compile(
-			"getIntent.*rawQuery|getIntent.*execSQL|getStringExtra.*query|"
-					+ "getIntent.*insert|getIntent.*update|getIntent.*delete|"
-					+ "Intent.*SQLiteDatabase|Bundle.*rawQuery|Bundle.*execSQL");
+	/**
+	 * IPC-source markers (Intent/Bundle extras) matched at CLASS scope. jadx decompiles the source
+	 * extraction and the SQL sink on separate lines ({@code String n = getIntent().getStringExtra("n");}
+	 * then {@code db.rawQuery("..." + n, null);}), so the same-line {@code EXTERNAL_DATA_SQL} AND
+	 * missed it. Paired with {@link #EXTERNAL_DATA_SQL_SINK} (line-scope) this is the cross-line form.
+	 * Package-private for testing.
+	 */
+	static final Pattern IPC_SOURCE = Pattern.compile(
+			"getIntent\\s*\\(\\s*\\)|getStringExtra|getBundleExtra|getBooleanExtra|getIntExtra|"
+					+ "Bundle\\s+\\w+\\s*=|getExtras\\s*\\(");
+
+	/** SQL sink reached from an IPC source on another line. Package-private for testing. */
+	static final Pattern EXTERNAL_DATA_SQL_SINK = Pattern.compile(
+			"\\.rawQuery\\s*\\(|\\.execSQL\\s*\\(|\\.query\\s*\\(|"
+					+ "\\.insert\\s*\\(|\\.update\\s*\\(|\\.delete\\s*\\(|compileStatement\\s*\\(");
 
 	private static final class Rule {
 		final Pattern pattern;
@@ -104,10 +117,6 @@ public class TrustBoundaryScanCommand extends AbstractCommand {
 				"Intent extra used for auth/role decision — attacker controls Intent extras; "
 						+ "never trust Intent data for authorization; verify against server-side "
 						+ "state or signed data"),
-		new Rule(EXTERNAL_DATA_SQL, "external_data_sql", "high",
-				"Intent/Bundle data used in SQL — SQL injection via untrusted input; "
-						+ "use parameterized queries (selectionArgs) instead of string "
-						+ "concatenation"),
 		new Rule(SHARED_PREFS_AUTH, "shared_prefs_auth", "medium",
 				"SharedPreferences used for auth state — modifiable by root/users; "
 						+ "not a secure auth store; use server-side session validation or "
@@ -167,6 +176,25 @@ public class TrustBoundaryScanCommand extends AbstractCommand {
 						if ("intent_auth_decision".equals(r.kind) || "bundle_role_check".equals(r.kind)) {
 							hasAuthDecisionFromIntent = true;
 						}
+						break;
+					}
+				}
+			}
+
+			// Cross-line IPC→SQL: jadx decompiles the source extraction and the SQL sink on separate
+			// lines (String n = getIntent().getStringExtra("n"); db.rawQuery("..." + n, null);), so the
+			// same-line EXTERNAL_DATA_SQL AND missed the common form. Class-scope IPC_SOURCE ∧ line-scope
+			// SQL sink (lineNumber = first sink line). ONE/class. Mirrors ExportedProviderScan/PathTraversal.
+			if (findings.size() < limit
+					&& !reportedKinds.contains("external_data_sql")
+					&& IPC_SOURCE.matcher(code).find()) {
+				for (int i = 0; i < lines.length; i++) {
+					if (EXTERNAL_DATA_SQL_SINK.matcher(lines[i]).find()) {
+						findings.add(finding("external_data_sql", "high", fullName, i + 1,
+								"Intent/Bundle data used in SQL — SQL injection via untrusted IPC input; "
+										+ "use parameterized queries (selectionArgs) instead of string "
+										+ "concatenation; never feed Intent extras into a SQL sink"));
+						highSeverityCount++;
 						break;
 					}
 				}
