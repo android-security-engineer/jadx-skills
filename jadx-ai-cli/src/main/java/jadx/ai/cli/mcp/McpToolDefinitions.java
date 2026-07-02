@@ -233,7 +233,7 @@ public class McpToolDefinitions {
 				optArg("limit", "integer", "Maximum number of findings", 300)));
 
 		tools.add(tool("jadx_intent_redirection_scan",
-				"Detect Intent redirection / confused-deputy (CWE-927, Google Play-flagged): a nested Intent extracted from an incoming Intent (getParcelableExtra / getParcelable / Intent.parseUri) then launched (startActivity/startService/sendBroadcast/bindService) or returned via setResult, proxying access to the app's non-exported components. Also flags Intent.parseUri on untrusted data. Not covered by intent-scan",
+				"Detect Intent redirection / confused-deputy (CWE-927, Google Play-flagged): a nested Intent extracted from an incoming Intent (getParcelableExtra / getParcelable / Intent.parseUri) then launched (startActivity/startService/sendBroadcast/sendStickyBroadcast/sendBroadcastAsUser/bindService) or returned via setResult, proxying access to the app's non-exported components. Also flags Intent.parseUri on untrusted data, and the PendingIntent/TaskStackBuilder-wrapping variant (pending_intent_redirection). Not covered by intent-scan",
 				optArg("package", "string", "Only scan classes under this package prefix", null),
 				optArg("limit", "integer", "Maximum number of findings", 300)));
 

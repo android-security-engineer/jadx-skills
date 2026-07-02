@@ -35,13 +35,20 @@ import jadx.api.JavaClass;
  * a single value, and the victim iterates and launches it. {@code Intent.parseUri(...)} on untrusted
  * data is flagged {@code unsafe_intent_parse/medium} on each occurrence (parsing an attacker URI into an
  * Intent is itself risky — it can set component/flags). {@code setResult(...,intent)} returning an
- * extracted Intent is {@code result_redirection/medium}.
+ * extracted Intent is {@code result_redirection/medium}. A class that extracts a nested Intent AND
+ * builds a {@code PendingIntent}/{@code TaskStackBuilder} is flagged
+ * {@code pending_intent_redirection/medium} — the Google Play-flagged CWE-927 variant where the
+ * extracted Intent is wrapped into a PendingIntent and handed back to the caller; medium (not high)
+ * because a class-level heuristic can't confirm the PendingIntent wraps the extracted Intent vs a
+ * self-made Notification Intent. The {@code *AsUser} broadcast variants
+ * ({@code sendBroadcastAsUser} etc.) are full {@code intent_redirection/high} sinks alongside the
+ * plain/sticky forms.
  *
  * Returns {@code {findings:[{kind,severity,className,lineNumber,detail}], count, highSeverityCount,
  * redirectionClasses, usesIntentParseUri, truncated}}.
  */
 @Command(name = "intent-redirection-scan",
-		description = "Detect Intent redirection / confused-deputy (CWE-927, Google Play-flagged): a nested Intent extracted from an incoming Intent (getParcelableExtra / getParcelable / getParcelableArrayExtra / getParcelableArrayListExtra / Intent.parseUri) is then launched (startActivity/startService/sendBroadcast/sendStickyBroadcast/bindService/setResult), proxying access to non-exported components. Not covered by intent-scan")
+		description = "Detect Intent redirection / confused-deputy (CWE-927, Google Play-flagged): a nested Intent extracted from an incoming Intent (getParcelableExtra / getParcelable / getParcelableArrayExtra / getParcelableArrayListExtra / Intent.parseUri) is then launched (startActivity/startService/sendBroadcast/sendStickyBroadcast/sendBroadcastAsUser/bindService/setResult) or wrapped into a PendingIntent/TaskStackBuilder, proxying access to non-exported components. Not covered by intent-scan")
 public class IntentRedirectionScanCommand extends AbstractCommand {
 
 	@Option(names = { "-p", "--package" }, description = "Only scan classes under this package prefix")
@@ -69,12 +76,36 @@ public class IntentRedirectionScanCommand extends AbstractCommand {
 	 * Launching with an Intent — the redirection sink. Includes the sticky-broadcast variants
 	 * ({@code sendStickyBroadcast}/{@code sendStickyOrderedBroadcast}) — a sticky broadcast of an
 	 * extracted nested Intent proxies access just as a plain broadcast does, and the old sink set
-	 * silently missed them. Package-private so a test can assert the sticky forms are sinks.
+	 * silently missed them. Also the {@code *AsUser} broadcast variants
+	 * ({@code sendBroadcastAsUser}/{@code sendOrderedBroadcastAsUser}/{@code sendStickyBroadcastAsUser})
+	 * — these take a {@code UserHandle} and propagate the extracted Intent (even cross-user), and the
+	 * bare {@code sendBroadcast\s*\(} term does NOT match them (the char after {@code sendBroadcast}
+	 * is {@code A}, not {@code (}), exactly the same gap the sticky forms had. Package-private so a
+	 * test can assert the full sink set.
 	 */
 	static final Pattern LAUNCH_SINK = Pattern.compile(
 			"startActivity\\s*\\(|startActivityForResult\\s*\\(|startActivities\\s*\\(|startService\\s*\\(|"
 					+ "startForegroundService\\s*\\(|sendBroadcast\\s*\\(|sendOrderedBroadcast\\s*\\(|"
-					+ "sendStickyBroadcast\\s*\\(|sendStickyOrderedBroadcast\\s*\\(|bindService\\s*\\(");
+					+ "sendStickyBroadcast\\s*\\(|sendStickyOrderedBroadcast\\s*\\(|bindService\\s*\\(|"
+					+ "sendBroadcastAsUser\\s*\\(|sendOrderedBroadcastAsUser\\s*\\(|sendStickyBroadcastAsUser\\s*\\(");
+
+	/**
+	 * Wrapping an extracted nested Intent into a {@link android.app.PendingIntent} and handing it back
+	 * to the caller — the Google Play-flagged redirection variant: the caller later triggers the
+	 * PendingIntent and reaches this app's non-exported components with this app's identity. The
+	 * {@code PendingIntent.get*} creators are NOT in {@link #LAUNCH_SINK} because a class-level
+	 * source ∧ sink heuristic cannot tell a PendingIntent built from the <em>extracted</em> Intent
+	 * (redirection) from one built from a self-made {@code new Intent(...)} (the overwhelmingly common
+	 * Notification case) — folding them into {@code intent_redirection/high} would flag every
+	 * notification-building Activity that also reads an extra. Reported as a distinct, lower-severity
+	 * kind so the high pool stays clean. {@code makePendingIntent} (the {@code TaskStackBuilder}
+	 * terminal call, matched bare because it is a chain tail like {@code builder...makePendingIntent(},
+	 * and the method name is TaskStackBuilder-exclusive) is the same shape. Package-private so a test
+	 * can assert the creator set.
+	 */
+	static final Pattern PENDING_INTENT_SINK = Pattern.compile(
+			"PendingIntent\\.(getActivity|getActivities|getBroadcast|getService|getForegroundService)\\s*\\(|"
+					+ "makePendingIntent\\s*\\(");
 
 	private static final Pattern PARSE_URI = Pattern.compile("Intent\\.parseUri\\s*\\(");
 	/** Two-arg setResult(int, Intent) returns an Intent to the caller; one-arg setResult(int) does not. */
@@ -115,8 +146,10 @@ public class IntentRedirectionScanCommand extends AbstractCommand {
 			}
 
 			boolean classLaunches = LAUNCH_SINK.matcher(code).find();
+			boolean classWrapsPendingIntent = PENDING_INTENT_SINK.matcher(code).find();
 			String[] lines = code.split("\n", -1);
 			boolean reportedRedirect = false;
+			boolean reportedPendingRedirect = false;
 
 			for (int i = 0; i < lines.length && findings.size() < limit; i++) {
 				String line = lines[i];
@@ -134,6 +167,20 @@ public class IntentRedirectionScanCommand extends AbstractCommand {
 					highSeverityCount++;
 					reportedRedirect = true;
 					redirectionClasses++;
+					continue;
+				}
+
+				// PendingIntent-wrapping redirection: a class that extracts a nested Intent AND builds a
+				// PendingIntent (or TaskStackBuilder) — if the PendingIntent wraps the EXTRACTED Intent
+				// and is handed back, the caller triggers it with this app's identity (Google Play-flagged
+				// CWE-927 variant). Reported medium (not high) because a class-level heuristic can't confirm
+				// the PendingIntent wraps the extracted Intent vs a self-made new Intent (the Notification
+				// case); a human confirms the data flow. ONE/class, on the first PendingIntent sink line.
+				if (classWrapsPendingIntent && !reportedPendingRedirect
+						&& PENDING_INTENT_SINK.matcher(line).find()) {
+					findings.add(finding("pending_intent_redirection", "medium", fullName, i + 1,
+							"Class extracts a nested Intent and builds a PendingIntent/TaskStackBuilder — if the PendingIntent wraps the extracted Intent and is returned to the caller, it proxies access to non-exported components (CWE-927 PendingIntent variant); confirm the PendingIntent's Intent argument is not the extracted one"));
+					reportedPendingRedirect = true;
 					continue;
 				}
 
