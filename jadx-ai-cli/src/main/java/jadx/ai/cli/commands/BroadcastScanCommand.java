@@ -87,6 +87,25 @@ public class BroadcastScanCommand extends AbstractCommand {
 			"putExtra\\s*\\(\\s*\"(?:password|passwd|pwd|secret|credential|apiKey|api_key|accessToken|refreshToken|authToken|sessionToken)\".*sendBroadcast|"
 					+ "sendBroadcast.*putExtra\\s*\\(\\s*\"(?:password|passwd|pwd|secret|credential|apiKey|api_key|accessToken|refreshToken|authToken|sessionToken)\"|"
 					+ "sendBroadcast.*\\b\\w*(?:password|passwd|pwd|secret|credential|apiKey|api_key|accessToken|refreshToken)\\w*\\b");
+	/**
+	 * Cross-line form of {@link #BROADCAST_SENSITIVE}. jadx splits the canonical build-then-send
+	 * idiom across three statements on different physical lines:
+	 * <pre>
+	 *   Intent i = new Intent("...");
+	 *   i.putExtra("password", pwd);   // line 2: putExtra + credential, NO sendBroadcast
+	 *   sendBroadcast(i);              // line 3: sendBroadcast + intent-local, NO credential
+	 * </pre>
+	 * Every per-line arm of BROADCAST_SENSITIVE welds {@code putExtra} and {@code sendBroadcast}
+	 * (or the credential name and {@code sendBroadcast}) with {@code .*} on ONE line, so none matches
+	 * line 2 or line 3 — a silent high-severity FN (credential broadcast). This DOTALL pattern matches
+	 * the credential-NAME-in-putExtra followed (across lines) by {@code sendBroadcast}, scoped to the
+	 * class body. The credential-name-in-{@code putExtra("...")} literal anchors it (same FP guard as
+	 * the per-line form), so cross-method bleed is low. Verified via real javac&#8594;d8&#8594;jadx.
+	 * Package-private for testing.
+	 */
+	static final Pattern BROADCAST_SENSITIVE_SPLIT = Pattern.compile(
+			"putExtra\\s*\\(\\s*\"(?:password|passwd|pwd|secret|credential|apiKey|api_key|accessToken|refreshToken|authToken|sessionToken)\"[\\s\\S]*?sendBroadcast\\s*\\(",
+			Pattern.DOTALL);
 	private static final Pattern DYNAMIC_RECEIVER = Pattern.compile(
 			"registerReceiver\\s*\\(|registerReceiver\\s*\\(\\s*this|"
 					+ "registerReceiver\\s*\\(\\s*receiver");
@@ -183,6 +202,18 @@ public class BroadcastScanCommand extends AbstractCommand {
 						break;
 					}
 				}
+			}
+			// Cross-line fallback: the per-line arms weld putExtra+sendBroadcast on one line, but jadx
+			// splits the build-then-send idiom across statements (see BROADCAST_SENSITIVE_SPLIT). Only
+			// fire when the per-line pass did NOT already report this kind (avoid dup).
+			if (!reportedKinds.contains("broadcast_sensitive_data")
+					&& findings.size() < limit
+					&& BROADCAST_SENSITIVE_SPLIT.matcher(code).find()) {
+				findings.add(finding("broadcast_sensitive_data", "high", fullName, 0,
+						"Sensitive data in broadcast — password/token/key put into an Intent extra then "
+								+ "sent via sendBroadcast on a separate statement; any receiver with matching "
+								+ "intent-filter can intercept (cross-line jadx form)"));
+				highSeverityCount++;
 			}
 		}
 

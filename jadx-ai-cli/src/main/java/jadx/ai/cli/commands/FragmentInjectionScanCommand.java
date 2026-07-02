@@ -74,6 +74,25 @@ public class FragmentInjectionScanCommand extends AbstractCommand {
 					+ "Fragment\\.instantiate.*intent\\.getStringExtra|"
 					+ "newInstance\\s*\\(.*getIntent|"
 					+ "setFragmentClass\\s*\\(.*getStringExtra");
+	/**
+	 * Cross-line form of {@link #FRAGMENT_FROM_INTENT}. When the extra is read into a local that is
+	 * REUSED (e.g. logged or passed twice), jadx keeps the local and splits the two statements across
+	 * lines — and renames the local after its origin (e.g. {@code stringExtra}), so the second line
+	 * reads {@code Fragment.instantiate(this, stringExtra);} with NO {@code getStringExtra} token:
+	 * <pre>
+	 *   String stringExtra = getIntent().getStringExtra("fragment_class");  // line 1: getStringExtra, no instantiate
+	 *   Fragment.instantiate(this, stringExtra);                            // line 2: instantiate, no getStringExtra
+	 * </pre>
+	 * Every per-line arm welds {@code instantiate} and {@code getStringExtra}/{@code getIntent} with
+	 * {@code .*} on one line, so neither line matches — a silent HIGH-severity FN (attacker-controlled
+	 * Fragment class). When the extra is used ONCE jadx inlines it back to a single line (caught by the
+	 * per-line arms); this DOTALL pattern catches the reused-local split. Scoped by the FRAGMENT_MARKER
+	 * class gate. Verified via real javac&#8594;d8&#8594;jadx. Package-private for testing.
+	 */
+	static final Pattern FRAGMENT_FROM_INTENT_SPLIT = Pattern.compile(
+			"getStringExtra\\s*\\([^)]*\"[^\"]*\"[\\s\\S]{0,400}?Fragment\\.instantiate\\s*\\(|"
+					+ "getIntent\\s*\\(\\s*\\)[\\s\\S]{0,400}?Fragment\\.instantiate\\s*\\(",
+			Pattern.DOTALL);
 	private static final Pattern FRAGMENT_FROM_BUNDLE = Pattern.compile(
 			"Fragment\\.instantiate\\s*\\(.*getBundle|"
 					+ "instantiate\\s*\\(.*getArguments|"
@@ -203,6 +222,21 @@ public class FragmentInjectionScanCommand extends AbstractCommand {
 						break;
 					}
 				}
+			}
+			// Cross-line fallback: when the intent extra is read into a reused local, jadx splits the
+			// getStringExtra and Fragment.instantiate across lines (see FRAGMENT_FROM_INTENT_SPLIT) and
+			// renames the local, so no per-line arm matches. Only fire when the per-line pass did NOT
+			// already report this kind (avoid dup).
+			if (!reportedKinds.contains("fragment_from_intent")
+					&& findings.size() < limit
+					&& FRAGMENT_FROM_INTENT_SPLIT.matcher(code).find()) {
+				findings.add(finding("fragment_from_intent", "high", fullName, 0,
+						"Fragment instantiated from Intent extra — attacker controls which "
+								+ "Fragment class is loaded (cross-line jadx form: extra read into a "
+								+ "reused local, instantiate on a separate statement); validate class "
+								+ "name against a whitelist of allowed Fragments"));
+				highSeverityCount++;
+				hasFragmentInjection = true;
 			}
 		}
 

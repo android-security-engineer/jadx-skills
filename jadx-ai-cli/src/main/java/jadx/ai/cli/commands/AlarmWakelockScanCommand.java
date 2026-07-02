@@ -40,6 +40,17 @@ public class AlarmWakelockScanCommand extends AbstractCommand {
 
 	private static final Pattern MARKER = Pattern.compile(
 			"AlarmManager|PowerManager|WakeLock|newWakeLock|BOOT_COMPLETED|setRepeating|setExact|RECEIVE_BOOT_COMPLETED");
+	/**
+	 * PARTIAL_WAKE_LOCK detector. The {@code newWakeLock\\s*\\(.*PARTIAL_WAKE_LOCK} and bare
+	 * {@code PARTIAL_WAKE_LOCK} arms cover the identifier form. The {@code newWakeLock\\s*\\(\\s*1\\b}
+	 * arm covers the CONSTANT-FOLDED form: {@code PARTIAL_WAKE_LOCK} is a {@code static final int}
+	 * (=0x00000001) that javac/d8 folds to the integer literal {@code 1}, so jadx emits
+	 * {@code newWakeLock(1, "tag")} and the identifier never appears — without this arm every real
+	 * decompiled wakelock is a silent FN (the same class as FLAG_SECURE/MODE_WORLD_READABLE folding).
+	 * Verified via real javac&#8594;d8&#8594;jadx. Package-private for testing.
+	 */
+	static final Pattern WAKELOCK_PARTIAL = Pattern.compile(
+			"newWakeLock\\s*\\(.*PARTIAL_WAKE_LOCK|PARTIAL_WAKE_LOCK|newWakeLock\\s*\\(\\s*1\\b");
 
 	private static final class Rule {
 		final Pattern pattern;
@@ -53,6 +64,12 @@ public class AlarmWakelockScanCommand extends AbstractCommand {
 			this.severity = severity;
 			this.detail = detail;
 		}
+		Rule(Pattern pattern, String kind, String severity, String detail) {
+			this.pattern = pattern;
+			this.kind = kind;
+			this.severity = severity;
+			this.detail = detail;
+		}
 	}
 
 	private static final List<Rule> RULES = List.of(
@@ -62,9 +79,9 @@ public class AlarmWakelockScanCommand extends AbstractCommand {
 			new Rule("setExactAndAllowWhileIdle\\s*\\(|setExact\\s*\\(|setAlarmClock\\s*\\(",
 					"alarm_doze_bypass", "high",
 					"AlarmManager setExactAndAllowWhileIdle / setExact / setAlarmClock — fires precisely even in Doze; abused to defeat idle-mode battery optimisation for covert wake-ups"),
-			new Rule("newWakeLock\\s*\\(.*PARTIAL_WAKE_LOCK|PARTIAL_WAKE_LOCK",
+			new Rule(WAKELOCK_PARTIAL,
 					"wakelock_partial", "medium",
-					"PowerManager.newWakeLock(PARTIAL_WAKE_LOCK) — keeps the CPU running with screen off; long-held partial wake locks drain battery and keep background work alive"),
+					"PowerManager.newWakeLock(PARTIAL_WAKE_LOCK) — keeps the CPU running with screen off; long-held partial wake locks drain battery and keep background work alive. The `newWakeLock(1` arm covers the constant-folded form: PARTIAL_WAKE_LOCK is a `static final int` (=0x1) that javac/d8 folds to the integer literal `1`, so jadx emits `newWakeLock(1, \"tag\")` and the identifier never appears — without this arm every real decompiled wakelock is a silent FN"),
 			new Rule("setExactAndAllowWhileIdle.*\\n.*\\.acquire\\s*\\(|\\.acquire\\s*\\(",
 					"wakelock_acquire", "low",
 					"WakeLock.acquire() — takes the lock; verify a matching release() exists or it is held indefinitely"),
