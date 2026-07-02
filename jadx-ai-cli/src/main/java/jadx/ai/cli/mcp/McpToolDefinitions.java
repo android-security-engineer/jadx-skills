@@ -170,7 +170,7 @@ public class McpToolDefinitions {
 				optArg("limit", "integer", "Maximum entries", 500)));
 
 		tools.add(tool("jadx_crypto_scan",
-				"Scan code for cryptographic API misuse: weak ciphers (DES/3DES/RC4), ECB mode, weak hashes (MD5/SHA-1), hardcoded keys, static IVs, insecure RNG",
+				"Scan code for cryptographic API misuse: weak ciphers (DES/3DES/RC2/Blowfish), ECB mode (incl. implicit-ECB bare AES), RSA PKCS#1 v1.5 padding, weak hashes (MD5/SHA-1), hardcoded keys, static IVs/GCM nonces, insecure RNG, SecureRandom.setSeed with a hardcoded literal",
 				optArg("package", "string", "Only scan classes under this package prefix", null),
 				optArg("limit", "integer", "Maximum number of findings", 300)));
 
@@ -190,7 +190,7 @@ public class McpToolDefinitions {
 				"Detect the app framework (Flutter, React Native, Unity IL2CPP/Mono, Xamarin/.NET, Cordova, Capacitor, NativeScript, Qt) from bundled .so / asset / class signatures — the triage step that decides whether the real logic is in Java or in a native blob (libapp.so / libil2cpp.so) needing blutter/Il2CppDumper"));
 
 		tools.add(tool("jadx_webview_scan",
-				"Scan code for dangerous WebView configuration: setAllowUniversalAccessFromFileURLs/setAllowFileAccessFromFileURLs (UXSS, local-file theft), addJavascriptInterface + setJavaScriptEnabled (JS->Java RCE), addWebMessageListener/WebMessageListener (modern JS bridge), setAcceptThirdPartyCookies + CookieManager.getCookie (session-cookie theft, CWE-1004), MIXED_CONTENT_ALWAYS_ALLOW, setWebContentsDebuggingEnabled, cleartext loadUrl, onReceivedSslError->proceed (MITM)",
+				"Scan code for dangerous WebView configuration: setAllowUniversalAccessFromFileURLs/setAllowFileAccessFromFileURLs (UXSS, local-file theft), addJavascriptInterface + setJavaScriptEnabled (JS->Java RCE), addWebMessageListener/WebMessageListener (modern JS bridge), setAcceptThirdPartyCookies + CookieManager.getCookie (session-cookie theft, CWE-1004), setMixedContentMode(0) (MIXED_CONTENT_ALWAYS_ALLOW; jadx folds the constant to 0), loadUrl(\"javascript:...\") (script injection/UXSS), setWebContentsDebuggingEnabled, cleartext loadUrl, onReceivedSslError->proceed (MITM)",
 				optArg("package", "string", "Only scan classes under this package prefix", null),
 				optArg("limit", "integer", "Maximum number of findings", 300)));
 

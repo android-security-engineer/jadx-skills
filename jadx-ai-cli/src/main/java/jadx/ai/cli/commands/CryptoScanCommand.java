@@ -26,9 +26,11 @@ import jadx.api.JavaClass;
  *   <li>weak hashes (MD5, SHA-1) and weak MACs</li>
  *   <li>hardcoded keys / static IVs ({@code SecretKeySpec}/{@code IvParameterSpec} over literals)</li>
  *   <li>insecure RNG ({@code new Random()} / {@code Math.random()}) in crypto-bearing classes</li>
+ *   <li>{@code SecureRandom.setSeed(<literal>)} — seeding a CSPRNG with a constant makes its output
+ *       predictable (high)</li>
  * </ul>
  */
-@Command(name = "crypto-scan", description = "Scan code for cryptographic API usage and flag misuse (weak ciphers, ECB, weak hashes, hardcoded keys)")
+@Command(name = "crypto-scan", description = "Scan code for cryptographic API usage and flag misuse (weak ciphers, ECB, weak hashes, hardcoded keys, static SecureRandom seed)")
 public class CryptoScanCommand extends AbstractCommand {
 
 	@Option(names = { "-p", "--package" }, description = "Only scan classes under this package prefix")
@@ -45,17 +47,34 @@ public class CryptoScanCommand extends AbstractCommand {
 	private static final Pattern CIPHER_GET = Pattern.compile("Cipher\\.getInstance\\(\\s*\"([^\"]+)\"");
 	private static final Pattern DIGEST_GET = Pattern.compile("MessageDigest\\.getInstance\\(\\s*\"([^\"]+)\"");
 	private static final Pattern MAC_GET = Pattern.compile("Mac\\.getInstance\\(\\s*\"([^\"]+)\"");
-	private static final Pattern SECRET_KEY = Pattern.compile("new\\s+SecretKeySpec\\(");
+	// `(?:[\w.]*\.)?` lets the short class name carry an optional fully-qualified prefix, so the rule
+	// still fires when jadx emits `new javax.crypto.spec.SecretKeySpec(` (imports-off, or a type jadx
+	// could not import). Verified against real imports-on AND imports-off jadx output.
+	static final Pattern SECRET_KEY = Pattern.compile("new\\s+(?:[\\w.]*\\.)?SecretKeySpec\\s*\\(");
 	// An IV/nonce built from an inline `new byte[...]` — both the initializer form `new byte[]{...}`
 	// and, critically, the zero-filled sized form `new byte[16]` (a fixed all-zero IV). If the array
 	// were randomized it would be filled via a separate variable, so an inline construction here is a
 	// static IV by construction.
-	private static final Pattern IV_LITERAL = Pattern.compile("new\\s+IvParameterSpec\\(\\s*new\\s+byte\\[");
+	static final Pattern IV_LITERAL = Pattern.compile("new\\s+(?:[\\w.]*\\.)?IvParameterSpec\\s*\\(\\s*new\\s+byte\\[");
 	// A GCM nonce built inline the same way. GCM is far less forgiving than CBC: reusing a nonce under
 	// the same key breaks BOTH confidentiality and authenticity (allows forgery / key-stream recovery).
-	private static final Pattern GCM_IV_LITERAL = Pattern.compile(
-			"new\\s+GCMParameterSpec\\s*\\(\\s*[^,]*,\\s*new\\s+byte\\[");
-	private static final Pattern INSECURE_RANDOM = Pattern.compile("new\\s+Random\\(|Math\\.random\\(");
+	static final Pattern GCM_IV_LITERAL = Pattern.compile(
+			"new\\s+(?:[\\w.]*\\.)?GCMParameterSpec\\s*\\(\\s*[^,]*,\\s*new\\s+byte\\[");
+	static final Pattern INSECURE_RANDOM = Pattern.compile("new\\s+(?:[\\w.]*\\.)?Random\\s*\\(\\s*\\)|Math\\.random\\s*\\(");
+	/**
+	 * {@code SecureRandom.setSeed(<literal>)} — seeding a CSPRNG with a hardcoded constant collapses its
+	 * output to a predictable stream (the whole point of SecureRandom is OS-entropy seeding). Matches a
+	 * numeric literal ({@code setSeed(0L)}, {@code setSeed(123)}) or an inline {@code new byte[]{...}} /
+	 * {@code new byte[N]} ({@code setSeed(new byte[]{1,2,3})}). Variable seeds
+	 * ({@code setSeed(someVar)}, {@code setSeed(System.currentTimeMillis())}) are intentionally NOT matched
+	 * — they are the correct usage. Gate is class-scope {@code SecureRandom} presence (see
+	 * {@link #hasSecureRandom}) so a plain {@code Random.setSeed} for non-crypto use does not fire.
+	 * Package-private for testing.
+	 */
+	static final Pattern SR_STATIC_SEED = Pattern.compile(
+			"\\bsetSeed\\s*\\(\\s*(?:-?\\d+L?|new\\s+(?:[\\w.]*\\.)?byte\\s*\\[\\s*\\]\\s*\\{[^}]*\\}|new\\s+(?:[\\w.]*\\.)?byte\\s*\\[\\s*\\d+\\s*\\])");
+	/** Class uses a {@code SecureRandom} (constructor or type) — gates {@link #SR_STATIC_SEED}. Package-private for testing. */
+	static final Pattern SECURE_RANDOM_USAGE = Pattern.compile("\\bSecureRandom\\b");
 	// Markers that a class actually does crypto, so insecure-RNG noise is scoped to crypto code.
 	private static final Pattern CRYPTO_MARKER =
 			Pattern.compile("javax\\.crypto|Cipher|SecretKeySpec|KeyGenerator|MessageDigest|\\bMac\\b|KeyPairGenerator");
@@ -90,7 +109,8 @@ public class CryptoScanCommand extends AbstractCommand {
 				continue;
 			}
 			boolean cryptoClass = CRYPTO_MARKER.matcher(code).find();
-			scanText(code, fullName, cryptoClass, findings);
+			boolean secureRandomClass = SECURE_RANDOM_USAGE.matcher(code).find();
+			scanText(code, fullName, cryptoClass, secureRandomClass, findings);
 		}
 
 		Map<String, Object> data = new LinkedHashMap<>();
@@ -100,7 +120,7 @@ public class CryptoScanCommand extends AbstractCommand {
 		return JsonOutput.ok(data);
 	}
 
-	private void scanText(String code, String cls, boolean cryptoClass, List<Map<String, Object>> findings) {
+	private void scanText(String code, String cls, boolean cryptoClass, boolean secureRandomClass, List<Map<String, Object>> findings) {
 		String[] lines = code.split("\n", -1);
 		for (int i = 0; i < lines.length && findings.size() < limit; i++) {
 			String line = lines[i];
@@ -141,6 +161,12 @@ public class CryptoScanCommand extends AbstractCommand {
 			if (cryptoClass && INSECURE_RANDOM.matcher(line).find() && findings.size() < limit) {
 				findings.add(finding(cls, ln, "insecure_random", "medium", "Random",
 						"Non-cryptographic RNG in a crypto class — use SecureRandom"));
+			}
+			if (secureRandomClass && SR_STATIC_SEED.matcher(line).find() && findings.size() < limit) {
+				findings.add(finding(cls, ln, "static_secure_random_seed", "high", "SecureRandom.setSeed",
+						"SecureRandom seeded with a hardcoded literal — this makes the CSPRNG output fully "
+								+ "predictable. Never call setSeed() with a constant; let the OS seed it, or "
+								+ "use setSeed(SecureRandom.getInstanceStrong().generateSeed(n))"));
 			}
 		}
 	}

@@ -33,15 +33,17 @@ import jadx.api.JavaClass;
  *       {@code CookieManager.getCookie} — session-cookie exfiltration to web content (CWE-1004)</li>
  *   <li>{@code setAllowFileAccess(true)} / {@code setAllowContentAccess(true)} — file:// and content://
  *       reachable from web content</li>
- *   <li>{@code setMixedContentMode(MIXED_CONTENT_ALWAYS_ALLOW)} — https page may load http resources</li>
+ *   <li>{@code setMixedContentMode(MIXED_CONTENT_ALWAYS_ALLOW)} — https page may load http resources
+ *       (jadx decompiles the constant to literal {@code 0}; the rule matches {@code setMixedContentMode(0)})</li>
  *   <li>{@code onReceivedSslError → handler.proceed()} — accepts any invalid TLS cert (trivial MITM, high)</li>
  *   <li>{@code setWebContentsDebuggingEnabled(true)} — remote debugging left on in production</li>
  *   <li>{@code setSavePassword(true)} — deprecated insecure credential storage</li>
+ *   <li>{@code loadUrl("javascript:...")} — script injection / UXSS (WebView runs a javascript: URL)</li>
  *   <li>{@code loadUrl("http://...")} / {@code loadData} over cleartext</li>
  * </ul>
  */
 @Command(name = "webview-scan",
-		description = "Scan code for dangerous WebView configuration (file-URL access, JS bridges incl. addWebMessageListener, third-party cookie theft, mixed content, debugging, SSL bypass)")
+		description = "Scan code for dangerous WebView configuration (file-URL access, JS bridges incl. addWebMessageListener, third-party cookie theft, mixed content (setMixedContentMode(0)), javascript: URL injection, debugging, SSL bypass)")
 public class WebviewScanCommand extends AbstractCommand {
 
 	@Option(names = { "-p", "--package" }, description = "Only scan classes under this package prefix")
@@ -72,6 +74,25 @@ public class WebviewScanCommand extends AbstractCommand {
 	/** Reads the WebView cookie jar; risky if exposed to untrusted web content. Package-private for testing. */
 	static final Pattern COOKIE_READ = Pattern.compile(
 			"CookieManager\\.getInstance\\s*\\(\\s*\\)\\s*\\.getCookie");
+
+	/**
+	 * {@code setMixedContentMode(MIXED_CONTENT_ALWAYS_ALLOW)} — https pages may load http resources (MITM).
+	 * The old rule matched the {@code MIXED_CONTENT_ALWAYS_ALLOW} identifier, but {@code WebSettings}
+	 * interface constants are compile-time-folded to integer literals in the bytecode; jadx therefore
+	 * decompiles the call as {@code setMixedContentMode(0)} (value 0 == ALWAYS_ALLOW), with NO identifier,
+	 * so the old pattern never matched any real input. Now matches the literal value 0. Package-private
+	 * for testing.
+	 */
+	static final Pattern MIXED_CONTENT_ALWAYS_ALLOW = Pattern.compile(
+			"setMixedContentMode\\s*\\(\\s*0\\s*\\)");
+
+	/**
+	 * {@code loadUrl("javascript:...")} — the WebView loads a {@code javascript:} URL, i.e. directly
+	 * injects and runs a script string in the loaded page's origin (script injection / UXSS). The
+	 * cleartext-load rules only covered the {@code http://} scheme; the {@code javascript:} scheme — the
+	 * most common WebView JS-injection surface — was missed. Package-private for testing.
+	 */
+	static final Pattern JS_LOAD_URL = Pattern.compile("loadUrl\\s*\\(\\s*\"javascript:");
 
 	// Each rule: a single-line pattern, a kind, a severity, and a human detail.
 	private static final class Rule {
@@ -117,8 +138,13 @@ public class WebviewScanCommand extends AbstractCommand {
 							"can be stolen. Review where the returned cookie string is sent"),
 			new Rule("setJavaScriptEnabled\\s*\\(\\s*true\\s*\\)", "javascript_enabled", "info",
 					"setJavaScriptEnabled(true) — JS execution enabled (risk multiplier for the findings above)"),
-			new Rule("MIXED_CONTENT_ALWAYS_ALLOW", "mixed_content", "high",
-					"setMixedContentMode(MIXED_CONTENT_ALWAYS_ALLOW) — https pages may load http resources (MITM)"),
+			new Rule(MIXED_CONTENT_ALWAYS_ALLOW, "mixed_content", "high",
+					"setMixedContentMode(MIXED_CONTENT_ALWAYS_ALLOW) — https pages may load http resources (MITM). "
+							+ "Note: the MIXED_CONTENT_ALWAYS_ALLOW constant compiles to literal 0, so jadx emits "
+							+ "setMixedContentMode(0)"),
+			new Rule(JS_LOAD_URL, "js_loadurl", "medium",
+					"loadUrl(\"javascript:...\") — WebView loads a javascript: URL, directly injecting and running "
+							+ "a script string in the loaded page's origin (script injection / UXSS)"),
 			new Rule("setWebContentsDebuggingEnabled\\s*\\(\\s*true\\s*\\)", "webview_debug", "medium",
 					"setWebContentsDebuggingEnabled(true) — remote WebView debugging enabled"),
 			new Rule("setSavePassword\\s*\\(\\s*true\\s*\\)", "save_password", "medium",
