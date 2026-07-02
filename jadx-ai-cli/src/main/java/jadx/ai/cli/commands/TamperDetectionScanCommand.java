@@ -92,7 +92,11 @@ public class TamperDetectionScanCommand extends AbstractCommand {
 					"emulator",
 					"Emulator-detection marker (goldfish/ranchu/qemu / concrete emulator fingerprint-model-hardware values / Genymotion / VBox)"),
 			new Rule(Pattern.compile(
-					"isDebuggerConnected\\s*\\(|waitingForDebugger\\s*\\(|ApplicationInfo\\.FLAG_DEBUGGABLE|FLAG_DEBUGGABLE|android\\.os\\.Debug|Debug\\.threadCpuTimeNanos"),
+					// ApplicationInfo.FLAG_DEBUGGABLE = 2, a `static final int` folded to the literal by
+					// javac/d8, so jadx emits `(flags & 2) != 0` and the identifier NEVER appears. The old
+					// identifier arms were dead for this form; add the `flags & 2` literal arm so a pure
+					// FLAG_DEBUGGABLE check (no isDebuggerConnected call) is still detected.
+					"flags\\s*&\\s*2\\b|isDebuggerConnected\\s*\\(|waitingForDebugger\\s*\\(|ApplicationInfo\\.FLAG_DEBUGGABLE|FLAG_DEBUGGABLE|android\\.os\\.Debug|Debug\\.threadCpuTimeNanos"),
 					"debugger",
 					"Debugger-detection marker (isDebuggerConnected / FLAG_DEBUGGABLE / timing check)"),
 			new Rule(Pattern.compile(
