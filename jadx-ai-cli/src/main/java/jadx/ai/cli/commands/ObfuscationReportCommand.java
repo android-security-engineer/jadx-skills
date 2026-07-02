@@ -43,7 +43,6 @@ public class ObfuscationReportCommand extends AbstractCommand {
 	private static final Pattern REFLECTION = Pattern.compile(
 			"Class\\.forName\\(|\\.getDeclaredMethod\\(|\\.getMethod\\(|\\.getDeclaredField\\(|\\.getField\\(|"
 					+ "Method\\.invoke\\(|\\.invoke\\(|\\.newInstance\\(");
-	private static final Pattern BASE64_DECODE = Pattern.compile("Base64\\.decode\\(|Base64\\.getDecoder\\(");
 	// Markers left by common commercial obfuscators/packers.
 	private static final String[] PACKER_MARKERS = {
 			"com.secneo", "com.qihoo", "com.stub.StubApp", "bangcle", "com.tencent.StubShell",

@@ -49,12 +49,17 @@ public class ApiEndpointExtractCommand extends AbstractCommand {
 	private static final Pattern RETROFIT_DELETE = Pattern.compile("@DELETE\\s*\\(\"([^\"]+)\"\\)");
 	private static final Pattern RETROFIT_PATCH = Pattern.compile("@PATCH\\s*\\(\"([^\"]+)\"\\)");
 	private static final Pattern RETROFIT_HTTP = Pattern.compile("@HTTP\\s*\\(.*?method\\s*=\\s*\"(\\w+)\".*?path\\s*=\\s*\"([^\"]+)\"", Pattern.DOTALL);
-	private static final Pattern RETROFIT_URL = Pattern.compile("@Url\\b");
+	/**
+	 * Retrofit dynamic-URL endpoint: a method annotated {@code @Url} takes the full URL/path as a
+	 * runtime argument, so NO literal path appears in code — the {@code @GET("...")}-style extractors
+	 * all miss it. Previously DECLARED but never wired into execute (a dead field = silent FN); now
+	 * scanned to flag these dynamic-URL endpoints. Package-private for testing.
+	 */
+	static final Pattern RETROFIT_URL = Pattern.compile("@Url\\b");
 	private static final Pattern RETROFIT_BASE_URL = Pattern.compile("Retrofit\\.Builder\\(\\).*?baseUrl\\s*\\(\"([^\"]+)\"\\)");
 
 	/** OkHttp / Volley patterns. */
 	private static final Pattern OKHTTP_URL = Pattern.compile("\\.url\\s*\\(\"([^\"]+)\"\\)");
-	private static final Pattern OKHTTP_BUILDER = Pattern.compile("Request\\.Builder\\(\\)");
 	private static final Pattern VOLLEY_URL = Pattern.compile("JsonObjectRequest\\s*\\(\\s*\\d+\\s*,\\s*\"([^\"]+)\"");
 
 	/**
@@ -131,6 +136,19 @@ public class ApiEndpointExtractCommand extends AbstractCommand {
 				ep.put("method", httpM.group(1));
 				ep.put("path", httpM.group(2));
 				ep.put("source", "retrofit-@HTTP");
+				ep.put("className", fullName);
+				endpoints.add(ep);
+			}
+
+			// Retrofit @Url — dynamic-URL endpoint: the full URL/path is a runtime argument, so no
+			// literal path appears in code (the @GET("...")-style extractors all miss it). Flag the
+			// method as a dynamic-URL endpoint. ONE per @Url occurrence (each marks a distinct method).
+			Matcher urlAnnotM = RETROFIT_URL.matcher(code);
+			while (urlAnnotM.find() && endpoints.size() < limit) {
+				Map<String, Object> ep = new LinkedHashMap<>();
+				ep.put("method", "DYNAMIC");
+				ep.put("path", "<runtime @Url argument>");
+				ep.put("source", "retrofit-@Url");
 				ep.put("className", fullName);
 				endpoints.add(ep);
 			}

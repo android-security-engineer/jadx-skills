@@ -69,7 +69,6 @@ public class KeystoreScanCommand extends AbstractCommand {
 	private static final Pattern ANDROID_KEYSTORE = Pattern.compile("\"AndroidKeyStore\"|AndroidKeyStore");
 
 	// Per-line signals
-	private static final Pattern USER_AUTH_LINE = Pattern.compile("setUserAuthenticationRequired\\s*\\(");
 	private static final Pattern AUTH_VALIDITY = Pattern.compile(
 			"setUserAuthenticationValidityDurationSeconds\\s*\\(");
 	private static final Pattern RANDOMIZED_OFF = Pattern.compile(

@@ -56,9 +56,6 @@ public class FlutterAnalysisCommand extends AbstractCommand {
 	/** Dart class/function name patterns (from blutter's analysis approach). */
 	private static final Pattern DART_IDENTIFIER = Pattern.compile("([A-Z][A-Za-z0-9_]+(?:Widget|State|Provider|Repository|Service|Controller|Model|Bloc|Cubit|Handler|Helper|Manager|Client|Adapter|Factory|Builder|Delegate|DataSource|UseCase|Interceptor|Converter|Validator|Parser|Serializer|Repository))\\b");
 
-	/** Flutter framework patterns in Java code. */
-	private static final Pattern FLUTTER_JAVA = Pattern.compile("io\\.flutter\\.(app|embedding|view|plugin|engine)");
-
 	@Override
 	protected void applyArgs(Map<String, Object> args) {
 		if (args.containsKey("limit")) {

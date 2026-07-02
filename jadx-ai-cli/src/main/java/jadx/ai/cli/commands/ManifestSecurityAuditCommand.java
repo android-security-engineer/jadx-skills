@@ -56,8 +56,6 @@ public class ManifestSecurityAuditCommand extends AbstractCommand {
 	private static final Pattern SERVICE_PATTERN = Pattern.compile("<service\\b[^>]*android:name=\"([^\"]+)\"");
 	private static final Pattern RECEIVER_PATTERN = Pattern.compile("<receiver\\b[^>]*android:name=\"([^\"]+)\"");
 	private static final Pattern PROVIDER_PATTERN = Pattern.compile("<provider\\b[^>]*android:name=\"([^\"]+)\"");
-	private static final Pattern EXPORTED_TRUE = Pattern.compile("android:exported=\"true\"");
-	private static final Pattern INTENT_FILTER = Pattern.compile("<intent-filter");
 	private static final Pattern ACTION_NAME = Pattern.compile("<action[^>]+android:name=\"([^\"]+)\"");
 
 	@Override
