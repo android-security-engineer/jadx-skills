@@ -154,8 +154,13 @@ public class WebviewScanCommand extends AbstractCommand {
 			new Rule("loadData(WithBaseURL)?\\s*\\([^)]*http://", "cleartext_load", "low",
 					"loadData over a cleartext http base URL"));
 
-	// Only scan classes that actually touch WebView, to keep results focused.
-	private static final Pattern WEBVIEW_MARKER = Pattern.compile("WebView|WebSettings|WebViewClient|WebChromeClient");
+	// Only scan classes that actually touch WebView, to keep results focused. Includes CookieManager:
+	// a session/cookie-manager class that reads the WebView cookie jar via
+	// CookieManager.getInstance().getCookie(url) — to forward over its own network stack or log — has no
+	// WebView/WebSettings/WebViewClient/WebChromeClient token, so without CookieManager here the class is
+	// skipped at the gate and the cookie_read rule never fires. Package-private for testing.
+	static final Pattern WEBVIEW_MARKER = Pattern.compile(
+			"WebView|WebSettings|WebViewClient|WebChromeClient|CookieManager");
 
 	// Class-level (multi-line) signal: an onReceivedSslError override that calls handler.proceed()
 	// accepts ANY invalid TLS certificate — trivial MITM. The method signature and the proceed()

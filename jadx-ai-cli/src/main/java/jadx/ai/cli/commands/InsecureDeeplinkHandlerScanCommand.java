@@ -56,12 +56,21 @@ public class InsecureDeeplinkHandlerScanCommand extends AbstractCommand {
 	@Option(names = { "--limit" }, description = "Maximum number of findings", defaultValue = "200")
 	protected int limit = 200;
 
-	/** Gate: only scan classes with deep-link handler markers. */
-	private static final Pattern DEEPLINK_MARKER = Pattern.compile(
+	/**
+	 * Gate: only scan classes with deep-link handler markers. Kept in sync with {@link #DEEPLINK_SOURCE} —
+	 * includes {@code getDataString} (a DEEPLINK_SOURCE anchor): jadx emits the variable form
+	 * {@code intent.getDataString()} (Intent stored in a local) which does NOT match {@code getData\s*\(}
+	 * (followed by {@code S}, not {@code (}) nor {@code getIntent().getData} (it's {@code intent.}, not
+	 * {@code getIntent().}), so without {@code getDataString} here a handler reading the raw URI string
+	 * via a local Intent variable is skipped at the gate — a silent high-severity FN on
+	 * {@code deeplink_path_traversal}/{@code deeplink_sql_injection}/{@code deeplink_webview_load}/
+	 * {@code deeplink_auth_decision}. Package-private for testing.
+	 */
+	static final Pattern DEEPLINK_MARKER = Pattern.compile(
 			"getData\\s*\\(|getIntent\\s*\\(\\s*\\)\\.getData|"
 					+ "ACTION_VIEW|onNewIntent|getUri|parseUri|"
 					+ "getQueryParameter|getPath|getScheme|getHost|"
-					+ "deeplink|deep_link|deepLink");
+					+ "deeplink|deep_link|deepLink|getDataString");
 
 	/**
 	 * Deep-link untrusted-URI source — matched at <b>class scope</b>: a real deep-link handler reads

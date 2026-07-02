@@ -52,11 +52,20 @@ public class LocalAuthBypassScanCommand extends AbstractCommand {
 	@Option(names = { "--limit" }, description = "Maximum number of findings", defaultValue = "200")
 	protected int limit = 200;
 
-	/** Gate: only scan classes that touch authentication logic. */
-	private static final Pattern AUTH_MARKER = Pattern.compile(
+	/**
+	 * Gate: only scan classes that touch authentication logic. Kept in sync with {@link #AUTH_METHOD} —
+	 * every AUTH_METHOD anchor must appear here or a class exercising only that anchor is skipped at the
+	 * gate and the auth-bypass rules never fire (a silent high-severity FN). Previously missing
+	 * {@code isUnlocked}/{@code isUserAuthenticated}/{@code isSessionValid}/{@code checkAuth}/
+	 * {@code validateAuth}/{@code verifyAuth}/{@code isAuth} — a backdoor method
+	 * {@code public boolean isUserAuthenticated() { return true; }} (no biometric/fingerprint reference)
+	 * was skipped entirely, so {@code auth_returns_true} high was never reported. Package-private for testing.
+	 */
+	static final Pattern AUTH_MARKER = Pattern.compile(
 			"checkPassword|verifyPin|isAuthenticated|isVerified|validateCredentials|checkLogin|"
 					+ "BiometricPrompt|AuthenticationCallback|onAuthenticationSucceeded|onAuthenticationFailed|"
-					+ "FingerprintManager|confirmCredential|checkSignature|verifySignature");
+					+ "FingerprintManager|confirmCredential|checkSignature|verifySignature|"
+					+ "isUnlocked|isAuth|verifyAuth|checkAuth|validateAuth|isUserAuthenticated|isSessionValid");
 
 	/** Method names that suggest an auth check. */
 	private static final Pattern AUTH_METHOD = Pattern.compile(

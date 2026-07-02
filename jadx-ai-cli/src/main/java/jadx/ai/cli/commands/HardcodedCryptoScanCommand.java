@@ -65,10 +65,22 @@ public class HardcodedCryptoScanCommand extends AbstractCommand {
 	protected int limit = 200;
 
 	/** Gate: only scan classes with crypto markers. */
-	private static final Pattern CRYPTO_MARKER = Pattern.compile(
+	/**
+	 * Gate: only scan classes that touch crypto. Kept in sync with the field-name arms of
+	 * {@link #HARDCODED_KEY_BYTES} ({@code KEY_BYTES}/{@code keyBytes}) and {@link #HARDCODED_SALT}
+	 * ({@code SALT}/{@code salt}): a constant-holder class
+	 * ({@code static final byte[] KEY_BYTES = "...".getBytes()}) with no other crypto token was skipped
+	 * at the gate, so {@code hardcoded_key_bytes}/{@code hardcoded_salt} never fired. Gate looseness is
+	 * safe — it only decides whether to scan; findings come from the rule Patterns. Deliberately does NOT
+	 * add bare {@code KEY}/{@code IV}/{@code nonce} (too broad — matches keyEvent/roman-numeral/variable
+	 * names); only the specific field-name tokens the rules look for.
+	 * Package-private for testing.
+	 */
+	static final Pattern CRYPTO_MARKER = Pattern.compile(
 			"IvParameterSpec|GCMParameterSpec|PBEParameterSpec|SecretKeySpec|"
 					+ "SecureRandom|PBKDF2|setSeed|KeySpec|Cipher|"
-					+ "AES|DES|RSA|Blowfish|ChaCha20|0x[0-9a-fA-F]{2}");
+					+ "AES|DES|RSA|Blowfish|ChaCha20|0x[0-9a-fA-F]{2}|"
+					+ "KEY_BYTES|keyBytes|\\bSALT\\b|\\bsalt\\b|\\bSEED\\b|\\bseed\\b");
 
 	/**
 	 * Hardcoded IV. Covers the inline form ({@code new IvParameterSpec(new byte[]{...})}) AND the
