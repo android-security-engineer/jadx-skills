@@ -346,7 +346,7 @@ public class McpToolDefinitions {
 				optArg("limit", "integer", "Maximum number of findings", 200)));
 
 		tools.add(tool("jadx_log_info_leak_scan",
-				"Detect sensitive data leaked to logs (MASVS MSTG-STORAGE-3): passwords, tokens, PII (email/phone/SSN), crypto material, auth headers (Authorization/Cookie), intent extras in Log.d/e/i/v/w and System.out. Distinct from logging-scan (framework inventory)",
+				"Detect sensitive data leaked to logs (MASVS MSTG-STORAGE-3): passwords, tokens, PII (email/phone/SSN), crypto material, auth headers (Authorization/Cookie), intent extras in Log.d/e/i/v/w, Timber/Logger, System.out, and printStackTrace. Case-insensitive (camelCase privateKey/accessToken, UPPER tags). Distinct from logging-scan (framework inventory)",
 				optArg("package", "string", "Only scan classes under this package prefix", null),
 				optArg("limit", "integer", "Maximum number of findings", 200)));
 

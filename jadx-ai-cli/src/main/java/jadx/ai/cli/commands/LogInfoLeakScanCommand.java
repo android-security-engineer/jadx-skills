@@ -27,7 +27,10 @@ import jadx.api.JavaClass;
  * scanner focuses on <b>what sensitive data is being logged</b>, not whether
  * logging is present.
  *
- * <p>Categories (first-match-wins per line, ONE/class per kind):
+ * <p>Categories (first-match-wins per line, ONE/class per kind). All keyword rules are
+ * <b>case-insensitive</b> so camelCase identifiers ({@code privateKey}/{@code accessToken}/
+ * {@code userToken}) and UPPER log tags ({@code "PASSWORD"}) fire — Java naming is camelCase,
+ * the underscore-only forms missed the common case:
  * <ul>
  *   <li>{@code log_password} — Log.* with password variable/name — leaks
  *       credentials to Logcat (readable by any app with READ_LOGS)</li>
@@ -41,13 +44,15 @@ import jadx.api.JavaClass;
  *       leaks HTTP auth credentials to Logcat</li>
  *   <li>{@code log_intent_extras} — Log.* with getIntent().getExtras() or
  *       Bundle.toString() — may leak sensitive intent data to Logcat</li>
+ *   <li>{@code log_stacktrace} — {@code printStackTrace()} — writes the full stack trace
+ *       (and any exception message) to stderr/Logcat; an information-leak sink in its own right</li>
  * </ul>
  *
  * Returns {@code {findings:[{kind,severity,className,lineNumber,detail}], count,
  * highSeverityCount, hasCredentialLeak, hasPiiLeak, truncated}}.
  */
 @Command(name = "log-info-leak-scan",
-		description = "Detect sensitive data leaked to logs (MASVS MSTG-STORAGE-3): passwords, tokens, PII, crypto material, auth headers in Log/System.out. Distinct from logging-scan (framework inventory)")
+		description = "Detect sensitive data leaked to logs (MASVS MSTG-STORAGE-3): passwords, tokens, PII, crypto material, auth headers in Log/Timber/Logger/System.out, plus printStackTrace. Case-insensitive (camelCase privateKey/accessToken, UPPER tags). Distinct from logging-scan (framework inventory)")
 public class LogInfoLeakScanCommand extends AbstractCommand {
 
 	@Option(names = { "-p", "--package" }, description = "Only scan classes under this package prefix")
@@ -65,34 +70,45 @@ public class LogInfoLeakScanCommand extends AbstractCommand {
 	 * Package-private so a test can assert framework logs are classified.
 	 */
 	static final String LOG_SINK_PREFIX =
-			"(?:Log\\.[a-z]+|Timber\\.[a-z]+|Logger\\.[a-z]+)\\s*\\(|System\\.(?:out|err)\\.print(?:ln)?\\s*\\(|println\\s*\\(";
+			"(?:Log\\.[a-z]+|Timber\\.[a-z]+|Logger\\.[a-z]+)\\s*\\(|System\\.(?:out|err)\\.print(?:ln)?\\s*\\(|"
+					+ "println\\s*\\(|\\.printStackTrace\\s*\\(";
 
-	/** Gate: only scan classes with log statements. */
+	/** Gate: only scan classes with log statements (incl. printStackTrace, the stderr leak sink). */
 	private static final Pattern LOG_MARKER = Pattern.compile(
 			"Log\\.(d|e|i|v|w|wtf)\\(|System\\.out\\.print|System\\.err\\.print|"
-					+ "android\\.util\\.Log|println|Timber\\.[a-z]+|Logger\\.[a-z]+");
+					+ "android\\.util\\.Log|println|printStackTrace|Timber\\.[a-z]+|Logger\\.[a-z]+");
 
 	/** Log statement pattern. Package-private for testing. */
 	static final Pattern LOG_CALL = Pattern.compile(LOG_SINK_PREFIX);
 
-	private static final Pattern LOG_PASSWORD = Pattern.compile(
-			"(?:" + LOG_SINK_PREFIX + ").*(?:password|passwd|pwd|secret|credential|pass_phrase)|"
-					+ "(?:password|passwd|pwd|secret|credential).*(?:" + LOG_SINK_PREFIX + ")");
+	/** Case-insensitive so camelCase ({@code privateKey}/{@code accessToken}) and UPPER tags fire. */
+	static final Pattern LOG_PASSWORD = Pattern.compile(
+			"(?i)(?:" + LOG_SINK_PREFIX + ").*(?:password|passwd|pwd|secret|credential|pass_phrase)|"
+					+ "(?i)(?:password|passwd|pwd|secret|credential).*(?:" + LOG_SINK_PREFIX + ")");
 	/** Package-private for the framework-sink test. */
 	static final Pattern LOG_TOKEN = Pattern.compile(
-			"(?:" + LOG_SINK_PREFIX + ").*(?:token|session|auth_token|access_token|refresh_token|jwt|bearer)|"
-					+ "(?:token|session|auth_token|access_token).*(?:" + LOG_SINK_PREFIX + ")");
-	private static final Pattern LOG_PII = Pattern.compile(
-			"(?:" + LOG_SINK_PREFIX + ").*(?:email|phone|ssn|social_security|credit_card|card_number|"
+			"(?i)(?:" + LOG_SINK_PREFIX + ").*(?:token|session|auth_token|access_token|refresh_token|jwt|bearer)|"
+					+ "(?i)(?:token|session|auth_token|access_token).*(?:" + LOG_SINK_PREFIX + ")");
+	/** Case-insensitive so camelCase PII ({@code emailAddress}/{@code phoneNumber}) fires. */
+	static final Pattern LOG_PII = Pattern.compile(
+			"(?i)(?:" + LOG_SINK_PREFIX + ").*(?:email|phone|ssn|social_security|credit_card|card_number|"
 					+ "date_of_birth|address|account_number)");
 	/** Package-private for the framework-sink test. */
 	static final Pattern LOG_CRYPTO = Pattern.compile(
-			"(?:" + LOG_SINK_PREFIX + ").*(?:key|cipher|signature|certificate|keystore|secret_key|private_key)");
-	private static final Pattern LOG_AUTH_HEADER = Pattern.compile(
-			"(?:" + LOG_SINK_PREFIX + ").*(?:Authorization|Cookie|WWW-Authenticate|Set-Cookie|Bearer)|"
-					+ "(?:Authorization|Cookie|Bearer).*(?:" + LOG_SINK_PREFIX + ")");
-	private static final Pattern LOG_INTENT_EXTRAS = Pattern.compile(
-			"(?:" + LOG_SINK_PREFIX + ").*(?:getIntent\\(\\)|getExtras\\(\\)|Bundle\\.toString|intent\\.getParcelable|getStringExtra)");
+			"(?i)(?:" + LOG_SINK_PREFIX + ").*(?:key|cipher|signature|certificate|keystore|secret_key|private_key)");
+	/** Case-insensitive ({@code Authorization}/{@code cookie} already mixed-case; now also {@code bearer}/{@code set-cookie}). */
+	static final Pattern LOG_AUTH_HEADER = Pattern.compile(
+			"(?i)(?:" + LOG_SINK_PREFIX + ").*(?:Authorization|Cookie|WWW-Authenticate|Set-Cookie|Bearer)|"
+					+ "(?i)(?:Authorization|Cookie|Bearer).*(?:" + LOG_SINK_PREFIX + ")");
+	static final Pattern LOG_INTENT_EXTRAS = Pattern.compile(
+			"(?i)(?:" + LOG_SINK_PREFIX + ").*(?:getIntent\\(\\)|getExtras\\(\\)|Bundle\\.toString|intent\\.getParcelable|getStringExtra)");
+	/**
+	 * A bare {@code printStackTrace()} call — writes the full stack trace (class/method/line info, and any
+	 * exception message which may carry SQL/path/secret-laden error text) to stderr/Logcat. It is an
+	 * information-leak sink in its own right, distinct from the keyword rules (a printStackTrace line
+	 * usually has no password/token keyword). Package-private for testing.
+	 */
+	static final Pattern LOG_STACKTRACE = Pattern.compile("\\.printStackTrace\\s*\\(");
 
 	private static final class Rule {
 		final Pattern pattern;
@@ -126,6 +142,10 @@ public class LogInfoLeakScanCommand extends AbstractCommand {
 		new Rule(LOG_INTENT_EXTRAS, "log_intent_extras", "info",
 				"Intent extras logged — may leak sensitive data passed between components; "
 						+ "review logged content for sensitive values"),
+		new Rule(LOG_STACKTRACE, "log_stacktrace", "info",
+				"printStackTrace() writes the full stack trace (and any exception message, which may "
+						+ "carry SQL/path/secret-laden error text) to stderr/Logcat; use a logger that "
+						+ "redacts or guards the trace behind BuildConfig.DEBUG"),
 	};
 
 	@Override
