@@ -67,7 +67,17 @@ public class TapjackingScanCommand extends AbstractCommand {
 
 	private static final List<Rule> RULES = List.of(
 			new Rule(Pattern.compile(
-					"TYPE_APPLICATION_OVERLAY|TYPE_SYSTEM_ALERT_WINDOW|TYPE_SYSTEM_OVERLAY|TYPE_SYSTEM_ERROR|TYPE_PHONE\\b|canDrawOverlays\\s*\\(|SYSTEM_ALERT_WINDOW"),
+					// Overlay window types. TYPE_APPLICATION_OVERLAY=2038, TYPE_SYSTEM_ALERT=2003,
+					// TYPE_SYSTEM_OVERLAY=2006, TYPE_SYSTEM_ERROR=2010, TYPE_PHONE=2002 — all `static final
+					// int` constants, folded to literals by javac/d8, so jadx emits `params.type = 2038`
+					// and the identifiers NEVER appear. The old identifier-only arms were dead code. The
+					// literal arm matches the common `.type = <overlayInt>` assignment form; the identifier
+					// arms remain for source-form code. canDrawOverlays() (runtime check) and the
+					// SYSTEM_ALERT_WINDOW permission-name string stay (the latter appears as a literal arg
+					// to requestPermission / <uses-permission> checks in code).
+					"\\.type\\s*=\\s*(?:2038|2003|2006|2010|2002|2008|2009)\\b"
+					+ "|TYPE_APPLICATION_OVERLAY|TYPE_SYSTEM_ALERT|TYPE_SYSTEM_OVERLAY|TYPE_SYSTEM_ERROR|TYPE_PHONE\\b"
+					+ "|canDrawOverlays\\s*\\(|SYSTEM_ALERT_WINDOW"),
 					"overlay_window", "medium",
 					"Draws a system overlay window — overlay/tapjacking/phishing capability; ensure obscured-touch handling and that it is not abusable"),
 			new Rule(Pattern.compile(
@@ -78,7 +88,13 @@ public class TapjackingScanCommand extends AbstractCommand {
 					"setFilterTouchesWhenObscured\\s*\\(|filterTouchesWhenObscured|FLAG_WINDOW_IS_OBSCURED|onFilterTouchEventForSecurity\\s*\\("),
 					"touch_obscure_protection", "info",
 					"Tapjacking defence present: obscured-touch filtering"),
-			new Rule(Pattern.compile("FLAG_SECURE"),
+			new Rule(Pattern.compile(
+					// FLAG_SECURE = 8192 = 0x2000, a `static final int` constant folded to the literal;
+					// jadx emits `setFlags(8192, 8192)` and the identifier usually does NOT appear. The old
+					// identifier-only arm was dead code on real decompiled output, so the
+					// anti-screenshot defence inventory never fired. The literal arm matches the
+					// setFlags/addFlags application; the identifier arm remains for source-form code.
+					"setFlags\\s*\\([^)]*\\b8192\\b|addFlags\\s*\\(\\s*\\b8192\\b|FLAG_SECURE"),
 					"flag_secure", "info",
 					"Anti-screenshot / anti-overlay-capture defence present: WindowManager FLAG_SECURE"));
 
