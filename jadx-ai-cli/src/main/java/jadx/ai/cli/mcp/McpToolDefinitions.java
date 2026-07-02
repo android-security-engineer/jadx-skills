@@ -306,7 +306,7 @@ public class McpToolDefinitions {
 				optArg("limit", "integer", "Maximum number of findings", 200)));
 
 		tools.add(tool("jadx_network_traffic_scan",
-				"Detect network-traffic security issues (MASVS MSTG-NETWORK-1/2): cleartext HTTP URLs, no hostname verification (ALLOW_ALL), insecure OkHttp/Retrofit config (no TLS/pinning), trust-all X509TrustManager, low timeouts. Distinct from ssl-scan (TLS implementation) and network-security-config (NSC policy)",
+				"Detect network-traffic security issues (MASVS MSTG-NETWORK-1/2): cleartext HTTP URLs (incl. bare \"http://\" scheme assembled at runtime), no hostname verification (ALLOW_ALL / anonymous HostnameVerifier returning true), OkHttp CLEARTEXT spec / no-TLS builder, insecure Retrofit http base URL, trust-all X509TrustManager, low timeouts. Distinct from ssl-scan (TLS implementation) and network-security-config (NSC policy)",
 				optArg("package", "string", "Only scan classes under this package prefix", null),
 				optArg("limit", "integer", "Maximum number of findings", 200)));
 

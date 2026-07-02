@@ -28,13 +28,17 @@ import jadx.api.JavaClass;
  * <p>Categories (first-match-wins per line):
  * <ul>
  *   <li>{@code cleartext_http} — {@code http://} URL in code (not https) — data sent in the
- *       clear, vulnerable to MITM</li>
- *   <li>{@code no_hostname_verify} — {@code setHostnameVerifier(ALLOW_ALL)} or
- *       custom HostnameVerifier that always returns true — does not verify the server
- *       certificate matches the expected hostname</li>
+ *       clear, vulnerable to MITM. Also catches the bare {@code "http://"} scheme assembled
+ *       at runtime ({@code "http://" + host}), not just complete URL literals</li>
+ *   <li>{@code no_hostname_verify} — {@code setHostnameVerifier(ALLOW_ALL)}, the deprecated
+ *       {@code ALLOW_ALL_HOSTNAME_VERIFIER} constant, or an anonymous {@code HostnameVerifier}
+ *       that unconditionally returns true — does not verify the server certificate matches the
+ *       expected hostname</li>
  *   <li>{@code insecure_okhttp} — OkHttp client built without TLS configuration
  *       ({@code OkHttpClient.Builder()} without {@code .sslSocketFactory()} or
  *       {@code .hostnameVerifier()})</li>
+ *   <li>{@code insecure_okhttp_cleartext} — OkHttp {@code ConnectionSpec.CLEARTEXT} — an
+ *       explicit cleartext-only connection spec (the modern OkHttp opt-in to unencrypted HTTP)</li>
  *   <li>{@code insecure_retrofit} — Retrofit builder with {@code http://} base URL —
  *       all API calls go over cleartext</li>
  *   <li>{@code trust_all_x509} — {@code TrustAllManager} / custom X509TrustManager that
@@ -47,7 +51,7 @@ import jadx.api.JavaClass;
  * highSeverityCount, hasCleartextTraffic, truncated}}.
  */
 @Command(name = "network-traffic-scan",
-		description = "Detect network-traffic security issues (MASVS MSTG-NETWORK-1/2): cleartext HTTP URLs, no hostname verification, insecure OkHttp/Retrofit config, trust-all X509TrustManager. Distinct from ssl-scan (TLS implementation) and network-security-config (NSC policy)")
+		description = "Detect network-traffic security issues (MASVS MSTG-NETWORK-1/2): cleartext HTTP URLs (incl. bare \"http://\" scheme), anonymous HostnameVerifier returning true, ALLOW_ALL verifier, OkHttp CLEARTEXT spec / no-TLS builder, Retrofit http base URL, trust-all X509TrustManager. Distinct from ssl-scan (TLS implementation) and network-security-config (NSC policy)")
 public class NetworkTrafficScanCommand extends AbstractCommand {
 
 	@Option(names = { "-p", "--package" }, description = "Only scan classes under this package prefix")
@@ -63,9 +67,43 @@ public class NetworkTrafficScanCommand extends AbstractCommand {
 					+ "sslSocketFactory|connectTimeout|readTimeout");
 
 	private static final Pattern HTTP_URL = Pattern.compile("\"http://[^\"]+\"");
-	private static final Pattern ALLOW_ALL_VERIFIER = Pattern.compile(
-			"ALLOW_ALL_HOSTNAME_VERIFIER|setHostnameVerifier\\s*\\(.*ALLOW_ALL|"
-					+ "HostnameVerifier\\s*\\{.*return\\s+true");
+	/**
+	 * A bare {@code "http://"} scheme — not a full URL string (e.g. {@code "http://" + host},
+	 * {@code "http://".concat(host)}, or a {@code "http://"} constant). {@link #HTTP_URL} requires a
+	 * complete {@code "http://..."} literal, so dynamically-assembled cleartext schemes were missed.
+	 * Catches the concatenated/constant form. Package-private for testing.
+	 */
+	static final Pattern HTTP_URL_BARE = Pattern.compile("\"http://\"\\s*\\+|\"http://\"\\.concat|=\\s*\"http://\"");
+	/**
+	 * OkHttp {@code ConnectionSpec.CLEARTEXT} — an explicit cleartext-only connection spec, the modern
+	 * OkHttp way to opt a host into unencrypted HTTP. Was previously suppressed: the
+	 * {@code connectionSpecs} token is listed in {@link #OKHTTP_SSL} as a *safe* signal, so a builder
+	 * that calls {@code .connectionSpecs(ConnectionSpec.CLEARTEXT)} was treated as TLS-configured and
+	 * the cleartext spec went unreported. Now reported as its own finding independent of the
+	 * OkHttp-Builder-without-TLS check. Package-private for testing.
+	 */
+	static final Pattern CLEARTEXT_SPEC = Pattern.compile("ConnectionSpec\\.CLEARTEXT(?!_AND_TLS)");
+	/**
+	 * Application-layer signals that hostname verification is disabled: the deprecated
+	 * {@code ALLOW_ALL_HOSTNAME_VERIFIER} constant, and a {@code setHostnameVerifier(ALLOW_ALL...)}
+	 * install call. Both are per-line. The anonymous-{@code HostnameVerifier}-returning-true form
+	 * ({@code new HostnameVerifier() { ... return true; }}) is matched separately at CLASS scope by
+	 * {@link #ANON_HOSTNAME_VERIFIER_TRUE} (DOTALL) because jadx decompiles it across multiple lines
+	 * and the old per-line {@code HostnameVerifier\s*\{.*return true} arm was dead code — it required
+	 * {@code \{} to follow {@code HostnameVerifier} immediately, but Java syntax is
+	 * {@code HostnameVerifier()} (with a parameter list). Package-private for testing.
+	 */
+	static final Pattern ALLOW_ALL_VERIFIER = Pattern.compile(
+			"ALLOW_ALL_HOSTNAME_VERIFIER|setHostnameVerifier\\s*\\(.*ALLOW_ALL");
+
+	/**
+	 * An anonymous {@code HostnameVerifier} subclass whose body unconditionally returns true — the
+	 * classic custom-verifier bypass. Matched at CLASS scope (DOTALL) because jadx emits the anonymous
+	 * class across multiple lines; the parameter list after {@code HostnameVerifier} is required so a
+	 * real verifier ({@code return host.equals(h);}) does not fire. Package-private for testing.
+	 */
+	static final Pattern ANON_HOSTNAME_VERIFIER_TRUE = Pattern.compile(
+			"HostnameVerifier\\s*\\([^)]*\\)\\s*\\{.*return\\s+true\\s*;", Pattern.DOTALL);
 	private static final Pattern OKHTTP_BUILDER = Pattern.compile("OkHttpClient\\.Builder");
 	private static final Pattern OKHTTP_SSL = Pattern.compile(
 			"sslSocketFactory|hostnameVerifier|connectionSpecs|certificatePinner");
@@ -103,9 +141,16 @@ public class NetworkTrafficScanCommand extends AbstractCommand {
 		new Rule(RETROFIT_BASE_HTTP, "insecure_retrofit", "high",
 				"Retrofit base URL uses http:// — all API calls go over cleartext; change to "
 						+ "https:// to encrypt traffic"),
+		new Rule(CLEARTEXT_SPEC, "insecure_okhttp_cleartext", "medium",
+				"OkHttp ConnectionSpec.CLEARTEXT — explicit cleartext-only connection spec; all "
+						+ "requests for this host go over unencrypted HTTP; remove the CLEARTEXT spec or "
+						+ "use CLEARTEXT_AND_TLS only as a fallback"),
 		new Rule(HTTP_URL, "cleartext_http", "medium",
 				"Hardcoded http:// URL — data sent in the clear without encryption; vulnerable "
 						+ "to MITM interception; use https:// instead"),
+		new Rule(HTTP_URL_BARE, "cleartext_http", "medium",
+				"Hardcoded \"http://\" scheme concatenated/constant — cleartext URL assembled at "
+						+ "runtime; data sent without encryption; vulnerable to MITM; use https://"),
 		new Rule(LOW_TIMEOUT, "connection_timeout_low", "info",
 				"Very low connection/read timeout configured — may cause reliability issues or "
 						+ "enable timing-based attacks; verify the timeout values are appropriate"),
@@ -151,6 +196,18 @@ public class NetworkTrafficScanCommand extends AbstractCommand {
 
 			if (classHasHttpUrl) {
 				hasCleartextTraffic = true;
+			}
+
+			// Anonymous HostnameVerifier that unconditionally returns true — class-level (DOTALL)
+			// because jadx emits the anonymous class across multiple lines. The old per-line arm
+			// was dead (required '{' to follow HostnameVerifier immediately; Java syntax is
+			// HostnameVerifier() with a parameter list). Report before the insecure_okhttp early-out
+			// so a TLS-configured builder that also installs a bypass verifier still fires.
+			if (findings.size() < limit && ANON_HOSTNAME_VERIFIER_TRUE.matcher(code).find()) {
+				findings.add(finding("no_hostname_verify", "high", fullName, 0,
+						"Anonymous HostnameVerifier that unconditionally returns true — does not verify "
+								+ "the server certificate matches the expected hostname; enables MITM attacks"));
+				highSeverityCount++;
 			}
 
 			// OkHttp without TLS config
