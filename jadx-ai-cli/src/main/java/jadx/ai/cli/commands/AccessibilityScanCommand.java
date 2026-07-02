@@ -78,9 +78,11 @@ public class AccessibilityScanCommand extends AbstractCommand {
 			new Rule("getRootInActiveWindow|findAccessibilityNodeInfosByText|findAccessibilityNodeInfosByViewId|getWindows\\s*\\(",
 					"screen_scrape", "high",
 					"Reads arbitrary on-screen content of any app (getRootInActiveWindow / findAccessibilityNodeInfos...) — the keylogging / overlay-targeting primitive abused by banking trojans"),
-			new Rule("TYPE_VIEW_TEXT_CHANGED",
+			new Rule("getEventType\\s*\\(\\s*\\)\\s*==\\s*16\\b|case\\s+16\\b|TYPE_VIEW_TEXT_CHANGED",
 					"keylogger", "high",
-					"Handles TYPE_VIEW_TEXT_CHANGED — captures keystrokes / field edits across apps via the accessibility event stream"),
+					"Handles TYPE_VIEW_TEXT_CHANGED (=16) — captures keystrokes / field edits across apps via "
+							+ "the accessibility event stream. The constant is a `static final int` folded to 16 "
+							+ "by javac/d8, so jadx emits `getEventType() == 16` / `case 16:`"),
 			new Rule("performGlobalAction\\s*\\(|dispatchGesture\\s*\\(|GLOBAL_ACTION_",
 					"ui_automation", "high",
 					"Synthesises UI actions (performGlobalAction / dispatchGesture / GLOBAL_ACTION_*) — auto-grants permissions, dismisses warnings, drives taps/gestures programmatically"),
