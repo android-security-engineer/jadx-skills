@@ -61,7 +61,15 @@ public class PendingIntentScanCommand extends AbstractCommand {
 	/** Gate: only scan classes that use PendingIntent. */
 	private static final Pattern PENDING_INTENT_MARKER = Pattern.compile("PendingIntent");
 
-	private static final Pattern FLAG_IMMUTABLE = Pattern.compile("FLAG_IMMUTABLE");
+	// jadx folds PendingIntent.FLAG_IMMUTABLE / FLAG_MUTABLE to their int literals in the bytecode
+	// (they are `static final int` constants), so a decompiled creator call reads
+	// `PendingIntent.getActivity(..., 67108864)` — the identifier `FLAG_IMMUTABLE` NEVER appears.
+	// Matching only the identifier was dead code: it made hasImmutable always false, so every
+	// PendingIntent — even an explicitly-IMMUTABLE one — was flagged `implicitly_mutable` high.
+	// Now match the identifier OR the decimal literal OR the hex literal. FLAG_IMMUTABLE = 0x04000000,
+	// FLAG_MUTABLE = 0x02000000. Package-private for testing.
+	static final Pattern FLAG_IMMUTABLE = Pattern.compile("FLAG_IMMUTABLE|67108864|0x04000000", Pattern.CASE_INSENSITIVE);
+	static final Pattern FLAG_MUTABLE = Pattern.compile("FLAG_MUTABLE|33554432|0x02000000", Pattern.CASE_INSENSITIVE);
 	private static final Pattern GET_BROADCAST = Pattern.compile("PendingIntent\\.getBroadcast\\s*\\(");
 	private static final Pattern GET_SERVICE = Pattern.compile("PendingIntent\\.getService\\s*\\(");
 	/** Every PendingIntent factory that takes a flags argument — the creators whose mutability matters. */
@@ -147,8 +155,8 @@ public class PendingIntentScanCommand extends AbstractCommand {
 				}
 				int close = matchParen(code, open);
 				String args = close < 0 ? code.substring(open + 1) : code.substring(open + 1, close);
-				boolean hasImmutable = args.contains("FLAG_IMMUTABLE");
-				boolean hasMutable = args.contains("FLAG_MUTABLE");
+				boolean hasImmutable = FLAG_IMMUTABLE.matcher(args).find();
+				boolean hasMutable = FLAG_MUTABLE.matcher(args).find();
 				if (hasImmutable) {
 					continue; // explicitly immutable on this axis — safe
 				}
