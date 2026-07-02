@@ -55,16 +55,25 @@ public class ScreenCaptureScanCommand extends AbstractCommand {
 
 	/** Gate: only scan classes touching screen-capture related APIs. */
 	private static final Pattern SCREEN_MARKER = Pattern.compile(
-			"FLAG_SECURE|MediaProjection|VirtualDisplay|createVirtualDisplay|Screenshot|PixelCopy|takeScreenshot|ScreenCapture");
+			"FLAG_SECURE|\\b8192\\b|MediaProjection|VirtualDisplay|createVirtualDisplay|Screenshot|PixelCopy|takeScreenshot|ScreenCapture");
 
 	/**
-	 * A real {@code FLAG_SECURE} application to a window — {@code setFlags(…, FLAG_SECURE)} or
-	 * {@code addFlags(FLAG_SECURE)}. This (NOT the bare {@code FLAG_SECURE} literal) is what proves the
-	 * defence is actually in effect; the bare literal also matches a comment or a {@code setFlags(0, …)}
-	 * mask-only call. Package-private so a test can assert the absent-finding uses the real form.
+	 * A real {@code FLAG_SECURE} application to a window — {@code setFlags(8192, 8192)} /
+	 * {@code addFlags(8192)} (the decompiled literal form) OR the identifier form
+	 * {@code setFlags(…, FLAG_SECURE)} / {@code addFlags(FLAG_SECURE)} (source-form / a constant jadx
+	 * did not fold). {@code WindowManager.LayoutParams.FLAG_SECURE} is a {@code static final int}
+	 * (= 8192 = 0x2000), so javac/d8 fold it to the integer literal; jadx decompiles the call as
+	 * {@code setFlags(8192, 8192)} and the identifier usually does NOT appear. The old pattern matched
+	 * ONLY the identifier, so {@code hasFlagSecure} was always false on real decompiled output — every
+	 * Activity (even a defended one) was flagged {@code flag_secure_absent} high (false-positive
+	 * amplifier), and {@code flag_secure_set} never fired. Now the literal-8192 arms (within a
+	 * setFlags/addFlags call, so a bare 8192 elsewhere does not false-positive) come FIRST; the
+	 * identifier arms remain for source-form code. Package-private so a test can assert it.
 	 */
 	static final Pattern FLAG_SECURE_ON_WINDOW = Pattern.compile(
-			"setFlags\\s*\\(.*FLAG_SECURE|addFlags\\s*\\(.*FLAG_SECURE|FLAG_SECURE.*setFlags|FLAG_SECURE.*addFlags");
+			"setFlags\\s*\\([^)]*\\b8192\\b|addFlags\\s*\\(\\s*\\b8192\\b"
+					+ "|setFlags\\s*\\(.*FLAG_SECURE|addFlags\\s*\\(.*FLAG_SECURE"
+					+ "|FLAG_SECURE.*setFlags|FLAG_SECURE.*addFlags");
 	/** An Activity-class marker — only Activity windows are candidates for FLAG_SECURE absence. */
 	static final Pattern ACTIVITY_MARKER = Pattern.compile(
 			"extends\\s+(Activity|AppCompatActivity|FragmentActivity|BaseActivity|ActionBarActivity)"

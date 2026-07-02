@@ -73,11 +73,34 @@ public class ScreenshotLeakScanCommand extends AbstractCommand {
 					+ "pin_entry|PinEntry|otp|OTP|auth|Auth|credential|"
 					+ "ssn|social_security|account_balance");
 
-	private static final Pattern FLAG_SECURE_SET = Pattern.compile(
-			"FLAG_SECURE|flag_secure|WindowManager\\.LayoutParams\\.FLAG_SECURE");
-	private static final Pattern FLAG_SECURE_CLEARED = Pattern.compile(
-			"setFlags\\s*\\(.*0\\s*\\)|clearFlags\\s*\\(.*FLAG_SECURE|"
+	/**
+	 * {@code FLAG_SECURE} actually applied to a window. {@code WindowManager.LayoutParams.FLAG_SECURE}
+	 * is a {@code static final int} (= 8192 = 0x2000), folded to the integer literal by javac/d8, so
+	 * jadx emits {@code setFlags(8192, 8192)} / {@code addFlags(8192)} and the identifier NEVER appears.
+	 * The old identifier-only pattern made {@code classHasFlagSecure} always false, so every sensitive
+	 * Activity was flagged {@code flag_secure_missing} high — a false-positive amplifier (the same
+	 * failure class as PendingIntentScan's FLAG_IMMUTABLE). Now matches the literal 8192 within a
+	 * setFlags/addFlags call (call context avoids a bare-8192 false positive); the identifier / XML
+	 * {@code flag_secure} arms remain for source-form / resource code. Package-private for testing.
+	 */
+	static final Pattern FLAG_SECURE_SET = Pattern.compile(
+			"setFlags\\s*\\([^)]*\\b8192\\b|addFlags\\s*\\(\\s*\\b8192\\b|FLAG_SECURE|flag_secure");
+	/**
+	 * {@code FLAG_SECURE} cleared after being set — {@code setFlags(0, …)} (mask-out) or
+	 * {@code clearFlags(8192)}. The {@code clearFlags(…FLAG_SECURE)} arm was dead code (the identifier
+	 * is folded to 8192); now matches {@code clearFlags(8192)}. The boolean-flag arms
+	 * ({@code flagSecure = false}) are for non-Android custom guards and stay. Package-private for testing.
+	 */
+	static final Pattern FLAG_SECURE_CLEARED = Pattern.compile(
+			"setFlags\\s*\\(\\s*0\\s*,|clearFlags\\s*\\(\\s*\\b8192\\b|"
 					+ "FLAG_SECURE.*false|flagSecure.*=.*false");
+	/**
+	 * {@code FLAG_SECURE} applied conditionally (only in some states). NOTE: the literal-8192 form cannot
+	 * be matched reliably here ({@code if (x) setFlags(8192, 8192)} vs a plain {@code setFlags(8192, 8192)}
+	 * is indistinguishable to a per-line regex without data-flow), so this rule keeps the identifier /
+	 * boolean-flag arms only — it fires on source-form code or a custom {@code flagSecure} boolean, and
+	 * is best-effort for the decompiled literal form. Documented limitation, not dead code.
+	 */
 	private static final Pattern FLAG_SECURE_CONDITIONAL = Pattern.compile(
 			"if\\s*\\(.*FLAG_SECURE|if\\s*\\(.*flagSecure|"
 					+ "\\?.*FLAG_SECURE|FLAG_SECURE.*\\?.*:");
