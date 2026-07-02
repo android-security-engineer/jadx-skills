@@ -137,7 +137,14 @@ public class AlarmWakelockScanCommand extends AbstractCommand {
 			}
 			if (code.contains("WakeLock") || code.contains("newWakeLock")) {
 				usesWakeLock = true;
-				if (code.contains("PARTIAL_WAKE_LOCK") && !code.contains("release()")) {
+				// PARTIAL_WAKE_LOCK is a static final int (=0x1) that javac/d8 folds to the literal `1`,
+				// so jadx emits `newWakeLock(1, "tag")` and the identifier never appears — a bare
+				// `code.contains("PARTIAL_WAKE_LOCK")` was therefore ALWAYS false on real decompiled
+				// output, so partialWakeLockWithoutRelease was a silent always-false flag. Reuse the
+				// WAKELOCK_PARTIAL detector (covers both the identifier and the folded `1` form) to
+				// detect a partial wakelock, then check for a missing release(). Verified via
+				// javac→d8→jadx: newWakeLock(1, "tag") now sets the flag when no release() is present.
+				if (WAKELOCK_PARTIAL.matcher(code).find() && !code.contains("release()")) {
 					partialWakeLockWithoutRelease = true;
 				}
 			}
