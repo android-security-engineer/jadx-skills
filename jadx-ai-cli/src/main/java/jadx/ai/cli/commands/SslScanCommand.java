@@ -23,9 +23,13 @@ import jadx.api.JavaClass;
  * Native: reads jadx's parsed model, no external tool. Detects the canonical bypasses:
  * <ul>
  *   <li>all-trusting {@code X509TrustManager}: empty {@code checkServerTrusted}/{@code checkClientTrusted}
- *       bodies, {@code getAcceptedIssuers} returning {@code null}/empty</li>
+ *       bodies, {@code getAcceptedIssuers} returning {@code null}/empty, AND non-empty bodies that
+ *       never throw/delegate, including the {@code try { cert.checkValidity() } catch (e) {}}
+ *       swallow-and-trust-all form</li>
  *   <li>permissive hostname verification: {@code verify(...) { return true; }},
- *       {@code ALLOW_ALL_HOSTNAME_VERIFIER}, {@code AllowAllHostnameVerifier}</li>
+ *       {@code ALLOW_ALL_HOSTNAME_VERIFIER}, {@code AllowAllHostnameVerifier}, AND the d8-desugared
+ *       lambda form {@code hostnameVerifier((h,s) -> true)} whose real {@code return true;} lives in
+ *       a synthetic {@code lambda$m$N} bridge method</li>
  *   <li>WebView TLS errors swallowed: {@code onReceivedSslError} that calls {@code handler.proceed()}</li>
  *   <li>setters that install the above ({@code setHostnameVerifier}/{@code setDefaultHostnameVerifier}
  *       in a class that also references an all-trusting verifier)</li>
@@ -71,6 +75,20 @@ public class SslScanCommand extends AbstractCommand {
 	// Hostname verification that always passes.
 	private static final Pattern VERIFY_TRUE = Pattern.compile(
 			"\\bverify\\s*\\([^)]*\\)\\s*\\{\\s*return\\s+true\\s*;\\s*\\}", Pattern.DOTALL);
+	/**
+	 * A desugared lambda hostname verifier that always returns true. d8 lowers
+	 * {@code new OkHttpClient.Builder().hostnameVerifier((h, s) -> true)} into an anonymous
+	 * {@code HostnameVerifier} whose {@code verify()} body is {@code return X.lambda$m$N(...);} — a
+	 * <b>synthetic bridge</b> — and the real {@code return true;} lives in the synthetic
+	 * {@code lambda$m$N} method, whose name is never {@code verify}. So {@link #VERIFY_TRUE} matches
+	 * neither the bridge nor the synthetic method. This pattern catches the synthetic
+	 * {@code lambda$name$index(...)\{ return true; }} method; paired with a class-scope
+	 * {@code hostnameVerifier(} call it is the lambda-form hostname bypass. Package-private for testing.
+	 */
+	static final Pattern LAMBDA_TRUE = Pattern.compile(
+			"lambda\\$\\w+\\$\\d+\\s*\\([^)]*\\)\\s*\\{\\s*return\\s+true\\s*;");
+	/** A {@code hostnameVerifier(} installer call (OkHttp builder). Class-scope gate for LAMBDA_TRUE. */
+	static final Pattern HOSTNAME_VERIFIER_CALL = Pattern.compile("hostnameVerifier\\s*\\(");
 	private static final Pattern ALLOW_ALL_VERIFIER = Pattern.compile(
 			"ALLOW_ALL_HOSTNAME_VERIFIER|AllowAllHostnameVerifier|NullHostnameVerifier|NoopHostnameVerifier");
 
@@ -160,6 +178,21 @@ public class SslScanCommand extends AbstractCommand {
 					"HostnameVerifier.verify() unconditionally returns true — hostname check disabled (MITM)", findings);
 		}
 
+		// Lambda-form hostname bypass: d8 desugars hostnameVerifier((h,s) -> true) into an anonymous
+		// HostnameVerifier whose verify() bridges to a synthetic lambda$m$N method holding the real
+		// `return true;`. VERIFY_TRUE sees neither (verify body is the bridge call, synthetic method
+		// isn't named verify), so we catch the synthetic method + the installer call. ONE/class.
+		if (tlsClass
+				&& HOSTNAME_VERIFIER_CALL.matcher(code).find()
+				&& LAMBDA_TRUE.matcher(code).find()) {
+			Matcher m = LAMBDA_TRUE.matcher(code);
+			if (m.find() && findings.size() < limit) {
+				findings.add(finding(cls, lineNumberAt(code, m.start()), "hostname_verifier", "high",
+						"Lambda hostname verifier unconditionally returns true (desugared to synthetic "
+								+ "lambda$m$N) — hostname check disabled (MITM)"));
+			}
+		}
+
 		// WebView: onReceivedSslError that proceeds past the error.
 		if (findings.size() < limit && SSL_ERROR.matcher(code).find() && PROCEED.matcher(code).find()) {
 			findings.add(finding(cls, lineOf(code, SSL_ERROR.matcher(code)), "webview_ssl_error", "high",
@@ -201,6 +234,13 @@ public class SslScanCommand extends AbstractCommand {
 	 * throws nor delegates to a validator — i.e. a non-empty trust-all stub. Whitespace-only bodies
 	 * are skipped here because the {@code EMPTY_CHECK_*} regexes already report them, avoiding a
 	 * double finding. Package-private so a same-package test can drive it with synthetic sources.
+	 *
+	 * <p>Also flags a body that <em>appears</em> to validate (it calls checkValidity/verify, hitting
+	 * {@link #VALIDATION_SIGNAL}) but wraps the call in a {@code try}/{@code catch} that swallows the
+	 * {@code CertificateException} — {@code try { cert.checkValidity(); } catch (CertificateException e) {}}.
+	 * jadx optimises a re-throwing {@code catch{throw e}} away (the call is emitted without a catch), so
+	 * a body that still has a {@code catch} but no bare {@code throw} is a swallow-and-trust-all. This
+	 * catches the "wrote validation, ate the exception" bypass that VALIDATION_SIGNAL alone misreads as safe.
 	 */
 	static List<Integer> nonThrowingTrustBody(String code, Pattern decl) {
 		List<Integer> hits = new ArrayList<>();
@@ -220,10 +260,21 @@ public class SslScanCommand extends AbstractCommand {
 			}
 			if (!VALIDATION_SIGNAL.matcher(body).find()) {
 				hits.add(m.start());
+				continue;
+			}
+			// Has a validation signal — but if the signal call sits inside a try whose catch swallows
+			// the CertificateException (catch present, no bare throw), the "validation" never rejects.
+			if (CATCH_PRESENT.matcher(body).find() && !BARE_THROW.matcher(body).find()) {
+				hits.add(m.start());
 			}
 		}
 		return hits;
 	}
+
+	/** A {@code catch} clause in the body — signals an exception is being handled (possibly swallowed). */
+	private static final Pattern CATCH_PRESENT = Pattern.compile("\\bcatch\\s*\\(");
+	/** A bare {@code throw} statement — its presence means the body re-rejects (not a swallow). */
+	private static final Pattern BARE_THROW = Pattern.compile("\\bthrow\\b");
 
 	/**
 	 * Index of the {@code '}'} matching the {@code '{'} at {@code openIdx}, honoring string, char,

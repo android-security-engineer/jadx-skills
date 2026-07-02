@@ -195,7 +195,7 @@ public class McpToolDefinitions {
 				optArg("limit", "integer", "Maximum number of findings", 300)));
 
 		tools.add(tool("jadx_ssl_scan",
-				"Scan code for insecure TLS/SSL trust enabling MITM: all-trusting X509TrustManager (empty checkServerTrusted, null getAcceptedIssuers), permissive hostname verification (verify()->true, ALLOW_ALL_HOSTNAME_VERIFIER), and WebView onReceivedSslError that proceeds past invalid certs",
+				"Scan code for insecure TLS/SSL trust enabling MITM: all-trusting X509TrustManager (empty checkServerTrusted, null getAcceptedIssuers, non-empty swallow-and-trust bodies that try/catch and never throw), permissive hostname verification (verify()->true, ALLOW_ALL_HOSTNAME_VERIFIER, d8-desugared lambda hostnameVerifier((h,s)->true) bridged to a synthetic lambda$m$N), and WebView onReceivedSslError that proceeds past invalid certs",
 				optArg("package", "string", "Only scan classes under this package prefix", null),
 				optArg("limit", "integer", "Maximum number of findings", 300)));
 
