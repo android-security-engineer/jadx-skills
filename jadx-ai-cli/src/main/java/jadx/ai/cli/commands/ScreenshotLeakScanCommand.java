@@ -104,8 +104,19 @@ public class ScreenshotLeakScanCommand extends AbstractCommand {
 	private static final Pattern FLAG_SECURE_CONDITIONAL = Pattern.compile(
 			"if\\s*\\(.*FLAG_SECURE|if\\s*\\(.*flagSecure|"
 					+ "\\?.*FLAG_SECURE|FLAG_SECURE.*\\?.*:");
-	private static final Pattern SENSITIVE_VIEW = Pattern.compile(
-			"EditText.*password|TextInputLayout.*password|"
+	/**
+	 * A sensitive input view (password / card / pin field). The {@code setInputType(TYPE_*_PASSWORD)}
+	 * arms are interface-constant-fold dead code on decompiled output: {@code TYPE_TEXT_VARIATION_PASSWORD}
+	 * (=128) and {@code TYPE_CLASS_TEXT} (=1) are {@code static final int} constants, folded by javac/d8,
+	 * so jadx emits {@code setInputType(129)} (= {@code TYPE_CLASS_TEXT|TYPE_TEXT_VARIATION_PASSWORD}) /
+	 * {@code setInputType(18)} (= {@code TYPE_CLASS_NUMBER|TYPE_NUMBER_VARIATION_PASSWORD}) and the
+	 * identifiers NEVER appear. The literal arms {@code setInputType(129)} / {@code setInputType(18)}
+	 * catch the real decompiled form; the identifier arms remain for source-form; the
+	 * {@code EditText.*password} / {@code passwordInput} / {@code android:password} arms stay. Package-private for testing.
+	 */
+	static final Pattern SENSITIVE_VIEW = Pattern.compile(
+			"setInputType\\s*\\(\\s*(?:129|18)\\b|"
+					+ "EditText.*password|TextInputLayout.*password|"
 					+ "passwordInput|cardNumberInput|pinInput|"
 					+ "setInputType.*TYPE_TEXT_VARIATION_PASSWORD|"
 					+ "setInputType.*TYPE_NUMBER_VARIATION_PASSWORD|"
