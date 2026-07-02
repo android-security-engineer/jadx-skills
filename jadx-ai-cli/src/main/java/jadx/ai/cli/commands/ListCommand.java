@@ -32,6 +32,9 @@ public class ListCommand extends AbstractCommand {
 	@Option(names = { "--with-inners" }, description = "Include inner classes in listing")
 	protected boolean withInners;
 
+	@Option(names = { "--limit" }, description = "Maximum number of results (0 = no limit)", defaultValue = "0")
+	protected int limit = 0;
+
 	@Option(
 			names = { "--use-index" },
 			description = "Answer `list -t classes` from the on-disk symbol index (built by `index build`) "
@@ -105,7 +108,7 @@ public class ListCommand extends AbstractCommand {
 				info.subPackageCount = pkg.getSubPackages().size();
 				results.add(info);
 			}
-			return JsonOutput.list(results);
+			return JsonOutput.list(cap(results));
 		}
 		List<String> packages = decompiler.getPackages()
 				.stream()
@@ -113,7 +116,7 @@ public class ListCommand extends AbstractCommand {
 				.filter(p -> packageName == null || p.startsWith(packageName))
 				.sorted()
 				.collect(Collectors.toList());
-		return JsonOutput.list(packages);
+		return JsonOutput.list(cap(packages));
 	}
 
 	/**
@@ -144,7 +147,7 @@ public class ListCommand extends AbstractCommand {
 			info.accessStr = row.col(5);
 			results.add(info);
 		}
-		return JsonOutput.list(results);
+		return JsonOutput.list(cap(results));
 	}
 
 	/**
@@ -177,7 +180,7 @@ public class ListCommand extends AbstractCommand {
 			info.accessStr = cls.getAccessInfo().toString();
 			results.add(info);
 		}
-		return JsonOutput.list(results);
+		return JsonOutput.list(cap(results));
 	}
 
 	private Object listMethods(JadxDecompiler decompiler) {
@@ -195,7 +198,7 @@ public class ListCommand extends AbstractCommand {
 			info.returnType = m.getReturnType().toString();
 			results.add(info);
 		}
-		return JsonOutput.list(results);
+		return JsonOutput.list(cap(results));
 	}
 
 	private Object listFields(JadxDecompiler decompiler) {
@@ -213,7 +216,19 @@ public class ListCommand extends AbstractCommand {
 			info.type = f.getType().toString();
 			results.add(info);
 		}
-		return JsonOutput.list(results);
+		return JsonOutput.list(cap(results));
+	}
+
+	/**
+	 * Apply {@code --limit} (0 = no limit) to a result list. Caps large listings (a big APK can have
+	 * tens of thousands of classes) so the MCP/CLI consumer isn't flooded; the {@code jadx_list} MCP
+	 * tool declares {@code limit} and {@code CommandDispatch.list} now wires it through.
+	 */
+	private <T> List<T> cap(List<T> results) {
+		if (limit <= 0 || results.size() <= limit) {
+			return results;
+		}
+		return new ArrayList<>(results.subList(0, limit));
 	}
 
 	static class ClassInfo {

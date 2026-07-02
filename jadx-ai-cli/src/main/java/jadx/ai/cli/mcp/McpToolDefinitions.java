@@ -23,7 +23,8 @@ public class McpToolDefinitions {
 				optArg("ignoreCase", "boolean", "Case-insensitive search", false),
 				optArg("package", "string", "Filter results by package name", null),
 				optArg("resourceType", "string", "Filter resources by type", null),
-				optArg("maxSize", "integer", "Max resource size in KB", 512)));
+				optArg("maxSize", "integer", "Max resource size in KB", 512),
+			optArg("searchParent", "boolean", "Also search parent classes for matching members", false)));
 
 		tools.add(tool("jadx_decompile",
 				"Decompile a class or method to Java source code",
@@ -106,10 +107,15 @@ public class McpToolDefinitions {
 				optArg("type", "string", "Navigation type: main-activity, application, manifest, entry-points", "entry-points")));
 
 		tools.add(tool("jadx_comment",
-				"Read code annotations and metadata comments from decompiled classes",
+				"Manage code annotations and metadata comments (list/search/add/update/delete)",
 				arg("class", "string", "Target class name (full name)", null),
-				optArg("type", "string", "Operation: list (all annotations), search (by keyword)", "list"),
-				optArg("query", "string", "Search keyword for annotations (required for search type)", null)));
+				optArg("type", "string", "Operation: list, search, add, update, delete", "list"),
+				optArg("query", "string", "Search keyword for annotations (required for search type)", null),
+				optArg("commentText", "string", "Comment text for add/update operations", null),
+				optArg("method", "string", "Target method name (for method-scoped add/update/delete)", null),
+				optArg("field", "string", "Target field name (for field-scoped add/update/delete)", null),
+				optArg("style", "string", "Comment style: LINE, BLOCK, JAVADOC (default LINE)", "LINE"),
+				optArg("insnOffset", "integer", "Instruction offset for insn-scoped comments (-1 = none)", -1)));
 
 		tools.add(tool("jadx_resources",
 				"List and read resources from the APK (manifest, layouts, strings, etc.)",
@@ -155,6 +161,7 @@ public class McpToolDefinitions {
 				optArg("package", "string", "Only scan classes under this package prefix", null),
 				optArg("types", "string", "Comma-separated IOC types: url,ip,domain,endpoint", "url,ip,domain,endpoint"),
 				optArg("defang", "boolean", "Defang indicators (http->hxxp, . -> [.])", false),
+				optArg("decode-defang", "boolean", "Also decode already-defanged indicators (hxxp->http, [.]->., [at]->@)", false),
 				optArg("limit", "integer", "Maximum indicators per category", 500)));
 
 		tools.add(tool("jadx_permission_risk_map",
@@ -536,7 +543,7 @@ public class McpToolDefinitions {
 				optArg("limit", "integer", "Maximum findings", 100)));
 		tools.add(tool("jadx_dangerous_api_map",
 				"Map dangerous Android permissions to actual API calls used in the APK code",
-				optArg("app_only", "boolean", "Exclude framework/library callers", true),
+				optArg("appOnly", "boolean", "Exclude framework/library callers (default true)", true),
 				optArg("limit", "integer", "Maximum findings per permission", 50)));
 		tools.add(tool("jadx_manifest_security_audit",
 				"Comprehensive manifest security audit with risk scoring (security flags, dangerous permissions, exported components)",

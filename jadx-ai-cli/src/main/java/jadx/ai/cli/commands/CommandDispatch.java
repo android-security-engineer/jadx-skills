@@ -362,6 +362,9 @@ public final class CommandDispatch {
 		cmd.className = (String) args.get("class");
 		cmd.verbose = bool(args, "verbose");
 		cmd.withInners = bool(args, "withInners");
+		// Wire the MCP-declared `limit` (was a SILENT DROP: McpToolDefinitions declared limit=default 100
+		// but list() never read it, so an MCP client asking for 500 classes got the internal default).
+		cmd.limit = intArg(args, "limit", 0);
 		return cmd.execute(decompiler);
 	}
 
