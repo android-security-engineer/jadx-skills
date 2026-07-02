@@ -71,10 +71,22 @@ public class BroadcastScanCommand extends AbstractCommand {
 	private static final Pattern ORDERED_BROADCAST = Pattern.compile(
 			"sendOrderedBroadcast|RESULT_RECEIVER|"
 					+ "abortBroadcast\\s*\\(|getResultData\\s*\\(|setResultData\\s*\\(");
-	private static final Pattern BROADCAST_SENSITIVE = Pattern.compile(
-			"sendBroadcast.*(?:password|token|secret|key|credential|auth)|"
-					+ "putExtra.*(?:password|token|secret|key|credential|auth).*sendBroadcast|"
-					+ "sendBroadcast.*(?:password|token|secret)");
+	/**
+	 * Sensitive data broadcast to (potentially all) receivers. Was a FALSE-POSITIVE AMPLIFIER: the
+	 * bare substring {@code key} matched {@code putExtra("pref_key", ...)}, {@code auth} matched
+	 * {@code authorize}, {@code session} matched {@code sessionId} — broadcasting a normal
+	 * preference/map key was flagged {@code broadcast_sensitive_data} <b>high</b>. Now the
+	 * credential token must appear inside a {@code putExtra("...")} extra-NAME literal (the actual
+	 * sensitive-data channel), and only concrete credential names qualify
+	 * ({@code password}/{@code passwd}/{@code pwd}/{@code secret}/{@code credential}/{@code apiKey}/
+	 * {@code api_key}/{@code accessToken}/{@code refreshToken}/{@code authToken}/{@code sessionToken}).
+	 * Verified against real javac&#8594;d8&#8594;jadx: {@code putExtra("pref_key", v)} no longer fires;
+	 * {@code putExtra("password", pwd)} still does. Package-private for testing.
+	 */
+	static final Pattern BROADCAST_SENSITIVE = Pattern.compile(
+			"putExtra\\s*\\(\\s*\"(?:password|passwd|pwd|secret|credential|apiKey|api_key|accessToken|refreshToken|authToken|sessionToken)\".*sendBroadcast|"
+					+ "sendBroadcast.*putExtra\\s*\\(\\s*\"(?:password|passwd|pwd|secret|credential|apiKey|api_key|accessToken|refreshToken|authToken|sessionToken)\"|"
+					+ "sendBroadcast.*\\b\\w*(?:password|passwd|pwd|secret|credential|apiKey|api_key|accessToken|refreshToken)\\w*\\b");
 	private static final Pattern DYNAMIC_RECEIVER = Pattern.compile(
 			"registerReceiver\\s*\\(|registerReceiver\\s*\\(\\s*this|"
 					+ "registerReceiver\\s*\\(\\s*receiver");

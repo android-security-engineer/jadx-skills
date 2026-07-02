@@ -63,12 +63,20 @@ public class TrustBoundaryScanCommand extends AbstractCommand {
 					+ "SharedPreferences|getSharedPreferences|isLoggedIn|isAuthenticated|"
 					+ "isAdmin|isRoot|hasPermission|ACTION_|getAction");
 
-	private static final Pattern INTENT_AUTH = Pattern.compile(
-			"getIntent.*(?:isAdmin|isRoot|isAuthenticated|isLoggedIn|role|permission|"
-					+ "auth_level|access_level|privilege)|"
-					+ "getBooleanExtra.*(?:admin|root|auth|login|role|permission|privilege|access)|"
-					+ "getIntExtra.*(?:admin|root|auth|role|permission|level)|"
-					+ "getStringExtra.*(?:role|permission|auth_level|access_level)");
+	/**
+	 * An Intent extra used as an auth/privilege decision — e.g. {@code getIntent().getBooleanExtra("isAdmin", false)}
+	 * then branching on it (the extra is attacker-controlled via a crafted Intent). Was a FALSE-POSITIVE
+	 * AMPLIFIER: {@code getIntent.*role}/{@code getBooleanExtra.*login}/etc. paired the getter with any
+	 * same-line substring, so a log line ({@code Log.d("intent=" + getIntent() + " role=" + getRole())})
+	 * was flagged {@code intent_auth_decision} <b>high</b>. Now the sensitive keyword must appear inside
+	 * the extra-NAME string literal of a {@code getXxxExtra("...")} call (the actual attacker-controlled
+	 * channel), not as an arbitrary same-line substring. Package-private for testing.
+	 */
+	static final Pattern INTENT_AUTH = Pattern.compile(
+			"getBooleanExtra\\s*\\(\\s*\"(?:isAdmin|isRoot|isAuthenticated|isLoggedIn|admin|root|auth|login|role|permission|privilege|access|auth_level|access_level)\"|"
+					+ "getIntExtra\\s*\\(\\s*\"(?:isAdmin|isRoot|isAuthenticated|isLoggedIn|admin|root|auth|role|permission|level|auth_level|access_level|privilege)\"|"
+					+ "getStringExtra\\s*\\(\\s*\"(?:isAdmin|isRoot|isAuthenticated|isLoggedIn|role|permission|auth_level|access_level|privilege|admin|auth)\"|"
+					+ "getBundleExtra\\s*\\(\\s*\"(?:isAdmin|isRoot|isAuthenticated|isLoggedIn|role|permission|auth_level|access_level|admin|auth|privilege)\"");
 	private static final Pattern SHARED_PREFS_AUTH = Pattern.compile(
 			"SharedPreferences.*(?:isLoggedIn|isAuthenticated|login|auth|session)|"
 					+ "getBoolean.*(?:isLoggedIn|isAuthenticated|loggedIn|authenticated)|"
@@ -94,10 +102,21 @@ public class TrustBoundaryScanCommand extends AbstractCommand {
 			"getIntent\\s*\\(\\s*\\)|getStringExtra|getBundleExtra|getBooleanExtra|getIntExtra|"
 					+ "Bundle\\s+\\w+\\s*=|getExtras\\s*\\(");
 
-	/** SQL sink reached from an IPC source on another line. Package-private for testing. */
+	/**
+	 * SQL injection sink reached from an IPC source on another line. Was a FALSE-POSITIVE AMPLIFIER: the
+	 * old sink matched {@code .query/.insert/.update/.delete} too — but those are the parameterized
+	 * (ContentValues + selectionArgs) APIs that are SAFE by construction; every normal database class
+	 * that reads an Intent extra and writes it via {@code db.insert(...)} was flagged
+	 * {@code external_data_sql} <b>high</b>. Now restricted to the genuine injection sinks
+	 * ({@code rawQuery}/{@code execSQL}/{@code compileStatement}) AND requires a string-literal SQL
+	 * concatenated with {@code +} on the same line (the actual injection shape
+	 * {@code rawQuery("...'" + extra + "'")}); a parameterized {@code rawQuery("...=?", args)} does not
+	 * fire. Verified against real javac&#8594;d8&#8594;jadx output. Package-private for testing.
+	 */
 	static final Pattern EXTERNAL_DATA_SQL_SINK = Pattern.compile(
-			"\\.rawQuery\\s*\\(|\\.execSQL\\s*\\(|\\.query\\s*\\(|"
-					+ "\\.insert\\s*\\(|\\.update\\s*\\(|\\.delete\\s*\\(|compileStatement\\s*\\(");
+			"\\.rawQuery\\s*\\([^)]*\"[^)]*\\+|"
+					+ "\\.execSQL\\s*\\([^)]*\"[^)]*\\+|"
+					+ "compileStatement\\s*\\([^)]*\"[^)]*\\+");
 
 	private static final class Rule {
 		final Pattern pattern;

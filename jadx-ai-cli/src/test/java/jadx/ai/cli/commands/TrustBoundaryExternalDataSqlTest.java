@@ -54,24 +54,26 @@ class TrustBoundaryExternalDataSqlTest {
 	}
 
 	@Test
-	void getIntentIntoInsertAcrossLinesFires() {
-		assertTrue(injectable("String user = getIntent().getStringExtra(\"user\");\n"
+	void getIntentIntoInsertDoesNotFire() {
+		// db.insert(table, nullColumnHack, ContentValues) is the parameterized/ContentValues API —
+		// SAFE by construction (no string concatenation into SQL). The old sink matched .insert and
+		// flagged this high; the tightened sink requires a literal SQL + concatenation, so it no
+		// longer fires. (Intent extra persistence is a separate data-flow concern, not SQL injection.)
+		assertFalse(injectable("String user = getIntent().getStringExtra(\"user\");\n"
 				+ "db.insert(\"users\", null, cv);"),
-				"Intent extra then db.insert on a later line must fire");
+				"Intent extra then db.insert (ContentValues — SAFE) must NOT fire SQL injection");
 	}
 
 	@Test
 	void parameterizedQueryDoesNotFire() {
-		// selectionArgs — the correct pattern. SQL sink present, IPC source present, but the
-		// *parameterized* form (rawQuery(sql, selectionArgs)) is exactly what we want to NOT flag.
-		// The detector is intentionally syntax-only (no taint tracking), so a parameterized call
-		// with an Intent extra in scope still trips the sink pattern — this test documents that
-		// the sink regex matches .rawQuery( regardless of args, and IPC source is in scope, so it
-		// WILL fire. This is the deliberate trade-off: flag the sink, let triage confirm param use.
-		assertTrue(injectable("String name = getIntent().getStringExtra(\"name\");\n"
+		// selectionArgs — the correct pattern. The tightened sink requires a literal SQL concatenated
+		// with `+`; a parameterized rawQuery("...=?", selectionArgs) has no concatenation, so it does
+		// NOT fire — even with an Intent extra in scope. This is the desired behavior: the sink regex
+		// now distinguishes the injection shape from the parameterized shape.
+		assertFalse(injectable("String name = getIntent().getStringExtra(\"name\");\n"
 				+ "Cursor c = db.rawQuery(\"SELECT * FROM users WHERE n=?\", new String[]{name});"),
-				"syntax-only detector intentionally flags rawQuery even with selectionArgs — "
-						+ "no taint tracking; triage confirms parameterization");
+				"a parameterized rawQuery (no string concatenation) must NOT fire — the tightened "
+						+ "sink distinguishes injection from parameterization");
 	}
 
 	@Test

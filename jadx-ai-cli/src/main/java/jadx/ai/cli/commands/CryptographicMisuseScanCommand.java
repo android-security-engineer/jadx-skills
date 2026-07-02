@@ -78,10 +78,19 @@ public class CryptographicMisuseScanCommand extends AbstractCommand {
 	private static final Pattern NO_IV = Pattern.compile(
 			"Cipher\\.getInstance\\s*\\(\\s*\"AES/CBC|Cipher\\.getInstance\\s*\\(\\s*\"DES/CBC|"
 					+ "Cipher\\.getInstance\\s*\\(\\s*\"Blowfish/CBC");
-	private static final Pattern MD5_SECURITY = Pattern.compile(
+	/**
+	 * MD5 used for a security purpose. Was a FALSE-POSITIVE AMPLIFIER: the {@code MD5.*password}/
+	 * {@code MD5.*hash}/{@code MD5.*verify}/{@code MD5.*check} arms paired the token {@code MD5} with
+	 * arbitrary same-line substrings, so a comment ({@code // MD5 is broken - never hash passwords})
+	 * or a log line ({@code Log.w(TAG, "MD5 verify failed")}) was flagged {@code md5_for_security}
+	 * <b>high</b>. Now restricted to a real {@code MessageDigest.getInstance("MD5")} call context
+	 * (inline, or an MD5 string literal feeding a {@code MessageDigest.getInstance} on the same line).
+	 * Package-private for testing.
+	 */
+	static final Pattern MD5_SECURITY = Pattern.compile(
 			"MessageDigest\\.getInstance\\s*\\(\\s*\"MD5\"|"
-					+ "\"MD5\"\\s*.*MessageDigest|MD5\\s*.*password|"
-					+ "MD5\\s*.*hash|MD5\\s*.*verify|MD5\\s*.*check");
+					+ "\"MD5\"\\s*[,;)]?\\s*.*MessageDigest\\.getInstance|"
+					+ "MessageDigest.*\\.getInstance\\s*\\(\\s*\"MD5\"");
 	/**
 	 * SHA-1 used for a security purpose. Covers {@code MessageDigest.getInstance("SHA-1"/"SHA1")} and
 	 * the SHA-1-as-PRF key-derivation form {@code SecretKeyFactory.getInstance("PBKDF2WithHmacSHA1")}
@@ -89,11 +98,20 @@ public class CryptographicMisuseScanCommand extends AbstractCommand {
 	 * {@code MessageDigest}/{@code Mac} detection nor the bare {@code MessageDigest.getInstance} arm
 	 * here caught. Package-private so a test can assert the PBKDF2 form fires.
 	 */
+	/**
+	 * SHA-1 used for a security purpose. Covers {@code MessageDigest.getInstance("SHA-1"/"SHA1")},
+	 * the SHA-1-as-signature form {@code Signature.getInstance("SHA1withRSA")}, and the SHA-1-as-PRF
+	 * key-derivation form {@code SecretKeyFactory.getInstance("PBKDF2WithHmacSHA1")}. The old
+	 * {@code SHA1.*password}/{@code SHA-1.*signature}/{@code SHA1.*verify} arms paired the token with
+	 * arbitrary same-line substrings — a comment ({@code // SHA-1 signature is deprecated}) was a
+	 * false positive; now restricted to call context. Package-private for testing.
+	 */
 	static final Pattern SHA1_SECURITY = Pattern.compile(
 			"MessageDigest\\.getInstance\\s*\\(\\s*\"SHA-1\"|"
 					+ "MessageDigest\\.getInstance\\s*\\(\\s*\"SHA1\"|"
-					+ "\"SHA-1\"\\s*.*MessageDigest|SHA1\\s*.*password|"
-					+ "SHA-1\\s*.*signature|SHA1\\s*.*verify|"
+					+ "\"SHA-1\"\\s*[,;)]?\\s*.*MessageDigest\\.getInstance|"
+					+ "\"SHA1\"\\s*[,;)]?\\s*.*MessageDigest\\.getInstance|"
+					+ "Signature\\.getInstance\\s*\\(\\s*\"SHA1?with|"
 					+ "SecretKeyFactory\\.getInstance\\s*\\(\\s*\"PBKDF2WithHmacSHA1\"|"
 					+ "\"PBKDF2WithHmacSHA1\"");
 	/**

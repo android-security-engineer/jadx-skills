@@ -301,7 +301,7 @@ public class McpToolDefinitions {
 				optArg("limit", "integer", "Maximum number of findings", 200)));
 
 		tools.add(tool("jadx_insecure_api_scan",
-				"Detect insecure Android API usage (MASVS MSTG-CODE-6): component toggle (setComponentEnabledSetting), Settings.Secure/Global reads, DevicePolicyManager misuse, UsageStatsManager surveillance, keyguard dismiss, package install, device identifiers (Build.SERIAL/ANDROID_ID/getDeviceId). Catch-all for patterns not covered by specific scanners",
+				"Detect insecure Android API usage (MASVS MSTG-CODE-6): component toggle (setComponentEnabledSetting), Settings.Secure/Global reads, DevicePolicyManager misuse, UsageStatsManager surveillance, keyguard dismiss (dismissKeyguard/requestDismissKeyguard — read-only isKeyguardLocked excluded), package install, device identifiers (Build.SERIAL/ANDROID_ID/getDeviceId). Catch-all for patterns not covered by specific scanners",
 				optArg("package", "string", "Only scan classes under this package prefix", null),
 				optArg("limit", "integer", "Maximum number of findings", 200)));
 
@@ -361,7 +361,7 @@ public class McpToolDefinitions {
 				optArg("limit", "integer", "Maximum number of findings", 200)));
 
 		tools.add(tool("jadx_unsafe_encryption_scan",
-				"Detect custom/unsafe encryption (MASVS MSTG-CRYPTO): homemade ciphers (custom encrypt/decrypt), XOR encryption, RC4, DES/3DES/Blowfish, insecure TLS versions (SSLv3/TLS1.0/TLS1.1), custom padding. Distinct from crypto-scan (algorithm inventory), hardcoded-crypto-scan (hardcoded keys), cryptographic-misuse-scan (API misuse like ECB)",
+				"Detect custom/unsafe encryption (MASVS MSTG-CRYPTO): homemade ciphers (custom encrypt/decrypt), XOR encryption, RC4, DES/3DES/Blowfish, insecure TLS versions (SSLv3/TLS1.0/TLS1.1 — TLS1.2/1.3 excluded), custom padding. Distinct from crypto-scan (algorithm inventory), hardcoded-crypto-scan (hardcoded keys), cryptographic-misuse-scan (API misuse like ECB)",
 				optArg("package", "string", "Only scan classes under this package prefix", null),
 				optArg("limit", "integer", "Maximum number of findings", 200)));
 

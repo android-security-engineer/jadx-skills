@@ -79,12 +79,23 @@ public class InsecureFileIoScanCommand extends AbstractCommand {
 	static final Pattern WORLD_WRITABLE = Pattern.compile(
 			"openFileOutput\\s*\\([^,]*,\\s*(?:2|3)\\b|getSharedPreferences\\s*\\([^,]*,\\s*(?:2|3)\\b|getDir\\s*\\([^,]*,\\s*(?:2|3)\\b|"
 					+ "MODE_WORLD_WRITEABLE|setWritable\\s*\\(\\s*true\\s*,\\s*false|chmod\\s+666|chmod\\s+646");
-	private static final Pattern SENSITIVE_UNENCRYPTED = Pattern.compile(
-			"FileOutputStream.*(?:password|token|secret|key|credential|auth|session)|"
-					+ "openFileOutput.*(?:password|token|secret|key|credential)|"
-					+ "writeBytes.*(?:password|token|secret)|"
-					+ "FileWriter.*(?:password|token|secret|key)|"
-					+ "BufferedWriter.*(?:password|token|secret)");
+	/**
+	 * Sensitive data written to an unencrypted file. Was a FALSE-POSITIVE AMPLIFIER: the bare
+	 * substring {@code key} matched {@code pref_key_cache.bin}, {@code auth} matched
+	 * {@code authorize}/{@code author}, {@code session} matched {@code sessionId} — a normal
+	 * preferences-cache file was flagged {@code sensitive_file_unencrypted} <b>high</b>. The generic
+	 * {@code key}/{@code auth}/{@code session} substrings are removed; only concrete credential
+	 * tokens remain ({@code password}/{@code passwd}/{@code pwd}/{@code secret}/{@code credential}/
+	 * {@code apiKey}/{@code api_key}/{@code accessToken}/{@code refreshToken}/{@code authToken}).
+	 * Verified against real javac&#8594;d8&#8594;jadx: {@code new FileOutputStream("pref_key_cache.bin")}
+	 * no longer fires; {@code new FileOutputStream("password.dat")} still does. Package-private for testing.
+	 */
+	static final Pattern SENSITIVE_UNENCRYPTED = Pattern.compile(
+			"FileOutputStream.*(?:password|passwd|pwd|secret|credential|apiKey|api_key|accessToken|refreshToken|authToken)|"
+					+ "openFileOutput.*(?:password|passwd|pwd|secret|credential|apiKey|api_key)|"
+					+ "writeBytes.*(?:password|passwd|pwd|secret|credential)|"
+					+ "FileWriter.*(?:password|passwd|pwd|secret|credential|apiKey)|"
+					+ "BufferedWriter.*(?:password|passwd|pwd|secret|credential)");
 	private static final Pattern TEMP_FILE = Pattern.compile(
 			"createTempFile|File\\.createTempFile|"
 					+ "tempFile|tmpFile|TEMP_FILE");

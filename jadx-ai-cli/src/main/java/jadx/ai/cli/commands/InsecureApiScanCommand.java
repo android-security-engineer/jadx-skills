@@ -93,7 +93,22 @@ public class InsecureApiScanCommand extends AbstractCommand {
 			this.severity = severity;
 			this.detail = detail;
 		}
+		Rule(Pattern pattern, String kind, String severity, String detail) {
+			this.pattern = pattern;
+			this.kind = kind;
+			this.severity = severity;
+			this.detail = detail;
+		}
 	}
+
+	/**
+	 * Keyguard-bypass API. {@code isKeyguardLocked()} was removed from this rule: it is a read-only
+	 * boolean query ("is the keyguard currently showing?"), not a bypass — every app that checks
+	 * lock state (e.g. to decide whether to show a lock-screen notification) was flagged
+	 * {@code keyguard_dismiss} <b>high</b>. Only the dismiss APIs ({@code dismissKeyguard} /
+	 * {@code requestDismissKeyguard}) actually bypass the lock. Package-private for testing.
+	 */
+	static final Pattern KEYGUARD_DISMISS = Pattern.compile("dismissKeyguard|requestDismissKeyguard");
 
 	private static final Rule[] RULES = {
 		new Rule("setComponentEnabledSetting", "component_toggle", "medium",
@@ -102,9 +117,10 @@ public class InsecureApiScanCommand extends AbstractCommand {
 		new Rule("UsageStatsManager|queryUsageStats", "usage_stats_spy", "medium",
 				"UsageStatsManager — queries app usage history; can surveil user behavior "
 						+ "across all installed apps; verify this is a legitimate feature"),
-		new Rule("dismissKeyguard|KeyguardManager\\.isKeyguardLocked", "keyguard_dismiss", "high",
-				"KeyguardManager.dismissKeyguard() — bypasses the lock screen; an app can "
-						+ "dismiss the device lock without user authentication"),
+		new Rule(KEYGUARD_DISMISS, "keyguard_dismiss", "high",
+				"KeyguardManager.dismissKeyguard()/requestDismissKeyguard() — bypasses the lock "
+						+ "screen; an app can dismiss the device lock without user authentication. "
+						+ "(isKeyguardLocked() was removed — it is a read-only query, not a bypass)"),
 		new Rule("PackageInstaller|ACTION_INSTALL_PACKAGE|Intent\\.ACTION_INSTALL_PACKAGE",
 				"package_install", "high",
 				"PackageInstaller / ACTION_INSTALL_PACKAGE — the app can install other APKs; "

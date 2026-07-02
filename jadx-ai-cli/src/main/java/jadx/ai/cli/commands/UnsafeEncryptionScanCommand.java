@@ -85,11 +85,22 @@ public class UnsafeEncryptionScanCommand extends AbstractCommand {
 			"\"DES\"|\"DESede\"|DES/CBC|DES/ECB|DES/OFB|DES/CFB|"
 					+ "DESede/CBC|DESede/ECB|KeyGenerator.*DES|"
 					+ "DESEDE|DESede|Blowfish");
-	private static final Pattern INSECURE_TLS = Pattern.compile(
-			"SSLv3|TLSv1\\b|TLSv1\\.1|SSLContext.*SSL|"
+	/**
+	 * Insecure TLS protocol version. {@code TLSv1\b} was a FALSE-POSITIVE AMPLIFIER: the {@code \b}
+	 * word boundary sits between {@code 1} and {@code .}, so {@code "TLSv1.2"} (the modern secure
+	 * protocol) matched the insecure-TLS-1.0 arm — every app that pinned TLS 1.2 was flagged
+	 * {@code insecure_tls_version} high. Verified against real javac&#8594;d8&#8594;jadx output:
+	 * jadx preserves the string literal {@code "TLSv1.2"} / {@code "TLSv1"}, so the fix is the
+	 * negative-lookahead {@code (?![.\d])} — matches {@code TLSv1} not followed by {@code .} or a
+	 * digit (i.e. bare TLS 1.0), but NOT {@code TLSv1.2}/{@code TLSv1.1}. {@code TLSv1.1} stays
+	 * explicit. {@code PROTOCOL_TLSV1\b} has the same {@code .}-boundary bug and gets the same fix.
+	 * Package-private for testing.
+	 */
+	static final Pattern INSECURE_TLS = Pattern.compile(
+			"SSLv3|TLSv1(?![.\\d])|TLSv1\\.1|SSLContext.*SSL|"
 					+ "\"SSL\"|\"TLSv1\"|\"TLSv1\\.1\"|"
 					+ "setEnabledProtocols.*SSL|SSLv3|"
-					+ "setProtocol.*SSL|PROTOCOL_SSL|PROTOCOL_TLSV1\\b");
+					+ "setProtocol.*SSL|PROTOCOL_SSL|PROTOCOL_TLSV1(?![.\\d])");
 	/**
 	 * Custom (home-rolled) padding — named heuristics only. Previously also matched the standard JCA
 	 * padding names NoPadding/PKCS1Padding/ISO10126Padding/X923Padding, flagging every legitimate

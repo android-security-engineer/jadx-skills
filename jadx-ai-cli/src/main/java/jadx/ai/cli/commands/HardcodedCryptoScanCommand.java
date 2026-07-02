@@ -84,7 +84,14 @@ public class HardcodedCryptoScanCommand extends AbstractCommand {
 					+ "initVector\\s*=\\s*\"[^\"]{8,}\"|"
 					+ "ivSpec\\s*=\\s*new\\s+IvParameterSpec|"
 					+ "\"[0-9a-fA-F]{16,32}\"\\s*.*IvParameter|"
-					+ "byte\\[\\]\\s*\\w*\\s*=\\s*\"[^\"]{8,}\"\\.getBytes");
+					// Name-gated source-line arm (mirrors HARDCODED_SYMMETRIC_KEY): the bare
+					// `byte[] \w* = "...".getBytes` arm was a FALSE-POSITIVE AMPLIFIER — a non-IV
+					// buffer in a crypto class (a digest magic "SIGMAGIC9", a signature prefix, a
+					// file header) jadx keeps as `byte[] bytes = "...".getBytes()` was flagged
+					// hardcoded_iv high. Now requires an IV-ish variable name
+					// (iv|Iv|IV|nonce|initVector|initializationVector); the inline
+					// `IvParameterSpec("...")` arm still catches the un-named case.
+					+ "byte\\[\\]\\s*(?:\\w*(?:iv|Iv|IV|nonce|initVector|initializationVector)\\w*|IV[A-Z_]*)\\s*=\\s*\"[^\"]{8,}\"\\.getBytes");
 	private static final Pattern HARDCODED_SALT = Pattern.compile(
 			"PBEParameterSpec\\s*\\(\\s*(new\\s+byte\\[|\"[^\"]+\")|"
 					+ "salt\\s*=\\s*\"[^\"]{4,}\"|"
