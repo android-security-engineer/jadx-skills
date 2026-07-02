@@ -29,7 +29,7 @@ import jadx.api.JavaClass;
  * <ul>
  *   <li>{@code debug_lib} — known debug/instrumentation libraries present in the classpath
  *       (Stetho, Flipper, LeakCanary, Chucker, Chuck, HTTP Inspector, Google BinderSpy,
- *        Android Debug Database, Lynx, Segun-Franko debugger)</li>
+ *        Android Debug Database, Lynx, Segun-Franko debugger, OkHttp HttpLoggingInterceptor)</li>
  *   <li>{@code debug_branch} — {@code BuildConfig.DEBUG} or {@code Build.BETA} runtime branches
  *       that ship in the release APK</li>
  *   <li>{@code strict_mode} — {@code StrictMode} penalty/enable calls (development-only guard)</li>
@@ -46,7 +46,7 @@ import jadx.api.JavaClass;
  * hasDebugBranches, hasStrictMode, hasProfiler, debugLibs, truncated}}.
  */
 @Command(name = "debug-artifact-scan",
-		description = "Detect debug/instrumentation artifacts left in a release build (MASVS MSTG-CODE-4 / MSTG-RESILIENCE-1): Stetho, Flipper, LeakCanary, Chucker, HTTP Inspector, Android Debug Database, StrictMode, BuildConfig.DEBUG branches, method-tracing profiler. Distinct from logging-scan (Log API calls) and tamper-detection-scan (anti-hook defences)")
+		description = "Detect debug/instrumentation artifacts left in a release build (MASVS MSTG-CODE-4 / MSTG-RESILIENCE-1): Stetho, Flipper, LeakCanary, Chucker, HTTP Inspector, Android Debug Database, OkHttp HttpLoggingInterceptor, StrictMode, BuildConfig.DEBUG branches, method-tracing profiler. Distinct from logging-scan (Log API calls) and tamper-detection-scan (anti-hook defences)")
 public class DebugArtifactScanCommand extends AbstractCommand {
 
 	@Option(names = { "-p", "--package" }, description = "Only scan classes under this package prefix")
@@ -58,9 +58,12 @@ public class DebugArtifactScanCommand extends AbstractCommand {
 	/** Gate: only scan a class that touches debug/instrumentation artifacts. */
 	private static final Pattern DEBUG_MARKER = Pattern.compile(
 			"Stetho|Flipper|LeakCanary|Chucker|Chuck|HttpInspector|BinderSpy|DebugDB|LynxDebugger|"
-					+ "SegunFranko|BuildConfig\\.DEBUG|Build\\.BETA|StrictMode|startMethodTracing");
+					+ "SegunFranko|HttpLoggingInterceptor|BuildConfig\\.DEBUG|Build\\.BETA|StrictMode|startMethodTracing");
 
 	// --- debug_lib rules (class-level: once per class per library) ---
+
+	/** The OkHttp HttpLoggingInterceptor debug-lib pattern. Package-private for testing. */
+	static final Pattern HTTP_LOGGING_INTERCEPTOR = Pattern.compile("HttpLoggingInterceptor");
 
 	private static final Pattern[] DEBUG_LIB_PATTERNS = {
 		// Stetho — Facebook's Chrome DevTools bridge for Android
@@ -83,11 +86,18 @@ public class DebugArtifactScanCommand extends AbstractCommand {
 		Pattern.compile("com\\.github\\.piasy\\.lynx|LynxDebugger"),
 		// Segun-Franko debugger
 		Pattern.compile("SegunFranko|segunfranko"),
+		// OkHttp HttpLoggingInterceptor — an HTTP request/response logger that, at Level.BODY/HEADERS,
+		// writes the full network payload (Authorization headers, tokens, PII) to Logcat. As much a
+		// release-build data-leak surface as Chucker/Chuck (the in-app HTTP inspectors already listed),
+		// but a library reference rather than an in-app UI. Was missing from the debug-lib list.
+		// Package-private so a test can assert the canonical OkHttp setup fires.
+		HTTP_LOGGING_INTERCEPTOR,
 	};
 
 	private static final String[] DEBUG_LIB_NAMES = {
 		"stetho", "flipper", "leakcanary", "chucker", "chuck",
 		"http_inspector", "binderspy", "debug_db", "lynx", "segun_franko",
+		"http_logging_interceptor",
 	};
 
 	private static final String[] DEBUG_LIB_DETAILS = {
@@ -101,6 +111,8 @@ public class DebugArtifactScanCommand extends AbstractCommand {
 		"Android Debug Database — in-app DB viewer; exposes database contents, should not ship in release",
 		"Lynx — debug log viewer; should not ship in release",
 		"Segun-Franko debugger; should not ship in release",
+		"OkHttp HttpLoggingInterceptor — at Level.BODY/HEADERS writes full HTTP payload (Authorization "
+				+ "headers, tokens, PII) to Logcat; a release-build data-leak surface, like Chucker/Chuck",
 	};
 
 	// --- debug_branch rules ---

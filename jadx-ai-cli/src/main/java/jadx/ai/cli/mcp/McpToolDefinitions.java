@@ -243,7 +243,7 @@ public class McpToolDefinitions {
 				optArg("limit", "integer", "Maximum number of findings", 300)));
 
 		tools.add(tool("jadx_debug_artifact_scan",
-				"Detect debug/instrumentation artifacts left in a release build (MASVS MSTG-CODE-4 / MSTG-RESILIENCE-1): Stetho, Flipper, LeakCanary, Chucker, Chuck, HTTP Inspector, BinderSpy, Android Debug Database, Lynx, Segun-Franko, StrictMode penalties, BuildConfig.DEBUG runtime branches, method-tracing profiler (Debug.startMethodTracing). Distinct from logging-scan (Log API calls) and tamper-detection-scan (anti-hook defences)",
+				"Detect debug/instrumentation artifacts left in a release build (MASVS MSTG-CODE-4 / MSTG-RESILIENCE-1): Stetho, Flipper, LeakCanary, Chucker, Chuck, HTTP Inspector, BinderSpy, Android Debug Database, Lynx, Segun-Franko, OkHttp HttpLoggingInterceptor (Level.BODY/HEADERS logs full HTTP payload incl. tokens/headers), StrictMode penalties, BuildConfig.DEBUG runtime branches, method-tracing profiler (Debug.startMethodTracing). Distinct from logging-scan (Log API calls) and tamper-detection-scan (anti-hook defences)",
 				optArg("package", "string", "Only scan classes under this package prefix", null),
 				optArg("limit", "integer", "Maximum number of findings", 300)));
 
