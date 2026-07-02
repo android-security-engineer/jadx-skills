@@ -187,6 +187,10 @@ public class ManifestSecurityAuditCommand extends AbstractCommand {
 		data.put("exportedComponents", exportedFindings);
 		data.put("exportedComponentCount", exportedFindings.size());
 		data.put("intentFilterActions", intentActions);
+		// Silent-truncation signal: intentActions is capped at `limit` via a while-guard. The other
+		// findings (flags/dangerousPerms/exportedComponents) are bounded by manifest content and not
+		// capped, so only intentActions can silently drop — low severity (rarely >50 actions) but flagged.
+		data.put("truncated", intentActions.size() >= limit);
 		return JsonOutput.ok(data);
 	}
 

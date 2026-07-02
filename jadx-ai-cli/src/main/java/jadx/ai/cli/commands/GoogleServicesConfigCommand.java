@@ -129,6 +129,9 @@ public class GoogleServicesConfigCommand extends AbstractCommand {
 		data.put("stringResources", stringResources);
 		data.put("codeFindings", codeFindings);
 		data.put("totalFindings", codeFindings.size());
+		// Silent-truncation signal: codeFindings is capped at `limit` (break + while-guards); a large
+		// Firebase/Google-services code surface silently drops tail findings without this flag.
+		data.put("truncated", codeFindings.size() >= limit);
 		return JsonOutput.ok(data);
 	}
 

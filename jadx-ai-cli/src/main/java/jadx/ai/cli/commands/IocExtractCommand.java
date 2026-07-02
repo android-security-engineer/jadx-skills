@@ -125,6 +125,13 @@ public class IocExtractCommand extends AbstractCommand {
 		}
 
 		Map<String, Object> data = new LinkedHashMap<>();
+		// Silent-truncation signal (MULTI_LIST): urls/ips/domains (Sets) are each capped at `limit`
+		// inside collect(); endpoints is capped both inside collectEndpoints AND by a subList(0, limit)
+		// here — a SECOND truncation point on the same list. Each collection's size maxes at `limit`
+		// when truncated, so `size >= limit` is the conservative signal (can't distinguish "exactly
+		// limit" from "truncated to limit" — safe side: report truncated, the AI re-runs to be sure).
+		boolean truncated = urls.size() >= limit || ips.size() >= limit
+				|| domains.size() >= limit || endpoints.size() >= limit;
 		if (want.contains("url")) {
 			data.put("urls", finalize(urls));
 		}
@@ -137,6 +144,7 @@ public class IocExtractCommand extends AbstractCommand {
 		if (want.contains("endpoint")) {
 			data.put("endpoints", endpoints.size() > limit ? endpoints.subList(0, limit) : endpoints);
 		}
+		data.put("truncated", truncated);
 		return JsonOutput.ok(data);
 	}
 

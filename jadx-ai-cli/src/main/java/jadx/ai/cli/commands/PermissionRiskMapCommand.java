@@ -107,12 +107,21 @@ public class PermissionRiskMapCommand extends AbstractCommand {
 		}
 
 		List<Map<String, Object>> dangerous = new ArrayList<>();
+		boolean callSitesTruncated = false;
 		for (PermRisk pr : active) {
 			Map<String, Object> entry = new LinkedHashMap<>();
 			entry.put("permission", pr.permission);
 			entry.put("apiSignals", List.of(pr.apiTokens));
 			if (withCallsites) {
-				entry.put("callSites", findCallSites(decompiler, pr));
+				List<Map<String, Object>> sites = findCallSites(decompiler, pr);
+				// PER_ENTRY truncation: each permission's callSites is independently capped at `limit`
+				// (break + while-guard inside findCallSites). A permission exercised in >limit classes
+				// silently drops tail call-sites; totalApiHits-style counters would under-count. Top-level
+				// `truncated` (any entry hit cap) is the minimal correct signal.
+				if (sites.size() >= limit) {
+					callSitesTruncated = true;
+				}
+				entry.put("callSites", sites);
 			}
 			dangerous.add(entry);
 		}
@@ -126,6 +135,7 @@ public class PermissionRiskMapCommand extends AbstractCommand {
 			nonDangerous.removeIf(p -> active.stream().anyMatch(a -> a.permission.equals(p)));
 			data.put("otherPermissions", nonDangerous);
 		}
+		data.put("truncated", callSitesTruncated);
 		return JsonOutput.ok(data);
 	}
 

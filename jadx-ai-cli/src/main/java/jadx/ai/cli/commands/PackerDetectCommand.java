@@ -171,6 +171,12 @@ public class PackerDetectCommand extends AbstractCommand {
 		data.put("packers", findings);
 		data.put("isPacked", isPacked);
 		data.put("primaryPacker", primaryPacker);
+		// Silent-truncation signal: the packer loop breaks at `findings.size() >= limit` BEFORE
+		// checking later signatures, so a low user-supplied --limit both drops packer findings AND can
+		// leave isPacked/primaryPacker unset (a later higher-confidence sig is never evaluated). With the
+		// default limit=20 and only 15 packer sigs the cap cannot fire, but the flag covers the low-limit
+		// edge where the verdict itself is affected.
+		data.put("truncated", findings.size() >= limit);
 		return JsonOutput.ok(data);
 	}
 

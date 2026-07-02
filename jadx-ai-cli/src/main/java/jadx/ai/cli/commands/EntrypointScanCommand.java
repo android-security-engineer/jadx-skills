@@ -121,6 +121,11 @@ public class EntrypointScanCommand extends AbstractCommand {
 		data.put("entrypointCount", entrypoints.size());
 		data.put("byKind", byKind);
 		data.put("hasManifest", manifestXml != null);
+		// Silent-truncation signal: code-scan entrypoint kinds (application/static-init/jni-load) are
+		// capped at `limit * 4` (an unusual multiplier — note for the AI consumer: re-run with a limit
+		// ~4x larger to surface more). Manifest-sourced entrypoints are NOT capped. Without this flag a
+		// large app silently drops tail entrypoints.
+		data.put("truncated", entrypoints.size() >= limit * 4);
 		return JsonOutput.ok(data);
 	}
 

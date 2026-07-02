@@ -209,6 +209,11 @@ public class CordovaAnalysisCommand extends AbstractCommand {
 		data.put("urls", urls);
 		data.put("urlCount", urls.size());
 		data.put("cleartextUrlCount", cleartextUrls);
+		// Silent-truncation signal: secrets (capped at `limit` inside SecretPatterns.scanText), urls
+		// (capped at `limit` via while-guard), and plugins (hardcoded cap at 200, independent of
+		// --limit — a latent quirk: re-running with a higher limit does NOT surface more plugins).
+		// Without this flag the AI believes the www-JS secret/URL/plugin set is complete when it isn't.
+		data.put("truncated", secrets.size() >= limit || urls.size() >= limit || plugins.size() >= 200);
 
 		if (isCordova) {
 			List<String> notes = new ArrayList<>();

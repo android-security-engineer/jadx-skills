@@ -137,6 +137,11 @@ public class Il2cppMetadataScanCommand extends AbstractCommand {
 				"classCount", classNames.size(),
 				"methodCount", methodNames.size(),
 				"fieldCount", fieldNames.size()));
+		// Silent-truncation signal: each of the four name lists is independently capped at `limit`
+		// (--limit = "Maximum names per category"). A large Unity game easily exceeds 500 methods, so the
+		// tail names are silently dropped without this flag — the AI believes the symbol set is complete.
+		data.put("truncated", namespaces.size() >= limit || classNames.size() >= limit
+				|| methodNames.size() >= limit || fieldNames.size() >= limit);
 		return JsonOutput.ok(data);
 	}
 

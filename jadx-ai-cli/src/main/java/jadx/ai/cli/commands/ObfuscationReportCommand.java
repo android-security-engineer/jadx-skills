@@ -158,6 +158,13 @@ public class ObfuscationReportCommand extends AbstractCommand {
 		data.put("packerSignatures", packerHits);
 		data.put("findings", findings);
 		data.put("findingCount", findings.size());
+		// Silent-truncation signal: sampleObfuscated, decryptCandidates, reflectionClasses are each
+		// independently capped at `limit` via if-guards. packerHits is bounded by the fixed PACKER_MARKERS
+		// array (~10) and the findings list is NOT capped, so neither is included. A heavily-obfuscated
+		// app silently drops tail samples/candidates without this flag.
+		data.put("truncated", sampleObfuscated.size() >= limit
+				|| decryptCandidates.size() >= limit
+				|| reflectionClasses.size() >= limit);
 		return JsonOutput.ok(data);
 	}
 

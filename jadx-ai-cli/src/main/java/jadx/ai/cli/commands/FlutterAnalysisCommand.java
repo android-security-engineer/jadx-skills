@@ -191,6 +191,10 @@ public class FlutterAnalysisCommand extends AbstractCommand {
 		data.put("flutterAssets", flutterAssets);
 		data.put("dartIdentifiers", dartIdentifiers);
 		data.put("dartIdentifierCount", dartIdentifiers.size());
+		// Silent-truncation signal: dartIdentifiers is capped at `limit` via a while-guard; a production
+		// Flutter app has thousands of Dart identifiers, so the tail is silently dropped without this
+		// flag. flutterAssets/snapshotFiles are bounded enumerations (not capped), so not included.
+		data.put("truncated", dartIdentifiers.size() >= limit);
 
 		if (isFlutter) {
 			List<String> notes = new ArrayList<>();

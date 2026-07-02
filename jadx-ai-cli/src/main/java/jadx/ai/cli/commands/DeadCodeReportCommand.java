@@ -116,6 +116,10 @@ public class DeadCodeReportCommand extends AbstractCommand {
 		data.put("publicClassesChecked", checked);
 		data.put("orphanCandidateCount", orphans.size());
 		data.put("orphanCandidates", orphans);
+		// Silent-truncation signal: the orphan scan breaks at `orphans.size() >= limit`, so a large app
+		// silently drops tail orphans. totalClasses/publicClassesChecked are full counts (computed before
+		// the cap); without this flag the AI mistakes the capped list for complete — an FN amplifier.
+		data.put("truncated", orphans.size() >= limit);
 		data.put("note", "Text cross-reference approximation; entry/framework classes excluded. "
 				+ "Reflection/manifest-only reachability can cause false positives.");
 		return JsonOutput.ok(data);

@@ -146,6 +146,11 @@ public class CustomPermissionAuditCommand extends AbstractCommand {
 		data.put("normalLevelCount", normalLevel);
 		data.put("unenforcedCount", unenforced);
 		data.put("hasManifest", true);
+		// Silent-truncation signal: permissions is capped at `limit` via a while-guard, and EVERY
+		// downstream computation (guardSensitiveComponents, normalLevelCount, unenforcedCount) operates
+		// only on the truncated list — so a manifest with >limit custom <permission> tags silently drops
+		// the tail, and the guard cross-ref never sees the dropped permissions. An FN amplifier.
+		data.put("truncated", permissions.size() >= limit);
 		return JsonOutput.ok(data);
 	}
 

@@ -176,6 +176,13 @@ public class SourceQualityReportCommand extends AbstractCommand {
 		data.put("methodsWithCatchAll", methodsWithCatchAll);
 		data.put("lowQualityClasses", lowQualityClasses);
 		data.put("issues", issues);
+		// Silent-truncation signal: errorMethods/stubMethods/obfuscatedClasses are FULL counts (incremented
+		// unconditionally) while `issues` is capped at `limit` (only added when issues.size() < limit).
+		// Without this flag an AI consumer comparing errorMethods=312 to issues.size()=100 would mistake
+		// the capped list for the complete set — an FN amplifier (the tail issues are invisible).
+		// truncated = the number of issues we WOULD have added (sum of the three per-class issue counters)
+		// exceeds the capped list size.
+		data.put("truncated", (errorMethods + stubMethods + obfuscatedClasses) > issues.size());
 		return JsonOutput.ok(data);
 	}
 

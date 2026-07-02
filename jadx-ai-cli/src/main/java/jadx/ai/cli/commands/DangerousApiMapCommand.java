@@ -154,6 +154,11 @@ public class DangerousApiMapCommand extends AbstractCommand {
 		}
 
 		int totalApiHits = 0;
+		// PER_ENTRY truncation: each permission's hits list is independently capped at `limit`; once a
+		// permission hits the cap no more classes are added to it (and totalApiHits is under-counted for
+		// it). A top-level `truncated` (any entry hit cap) is the minimal correct signal — the AI just
+		// needs to know to re-run with a higher limit.
+		boolean truncated = false;
 
 		for (JavaClass cls : decompiler.getClasses()) {
 			String fullName = cls.getFullName();
@@ -173,7 +178,10 @@ public class DangerousApiMapCommand extends AbstractCommand {
 
 			for (PermApi pa : DANGEROUS_PERM_APIS) {
 				List<Map<String, Object>> hits = permApiMap.get(pa.permission);
-				if (hits.size() >= limit) continue;
+				if (hits.size() >= limit) {
+					truncated = true;
+					continue;
+				}
 
 				for (String marker : pa.apiMarkers) {
 					if (code.contains(marker)) {
@@ -210,6 +218,7 @@ public class DangerousApiMapCommand extends AbstractCommand {
 		data.put("totalApiHits", totalApiHits);
 		data.put("appOnly", appOnly);
 		data.put("summary", summary);
+		data.put("truncated", truncated);
 		return JsonOutput.ok(data);
 	}
 

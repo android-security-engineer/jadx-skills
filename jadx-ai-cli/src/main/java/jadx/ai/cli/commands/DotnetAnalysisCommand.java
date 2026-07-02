@@ -203,6 +203,11 @@ public class DotnetAnalysisCommand extends AbstractCommand {
 			}
 			data.put("notes", notes);
 		}
+		// Silent-truncation signal: assemblies is capped at `limit` (continue-guard), but dllCount
+		// (assemblyCount) is a FULL count incremented before the cap. So dllCount > assemblies.size()
+		// means tail .dlls were dropped from the per-assembly detail list (flavor signals computed over
+		// all dlls are unaffected). Without this flag the AI mistakes the capped list for complete.
+		data.put("truncated", dllCount > assemblies.size());
 		return JsonOutput.ok(data);
 	}
 
