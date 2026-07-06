@@ -43,3 +43,6 @@ quark.json
 
 cliff.toml
 jadx-gui/src/main/resources/logback.xml
+
+# Vendored third-party RE/MCP repos kept on disk as porting source only (not built/tracked)
+/reference/

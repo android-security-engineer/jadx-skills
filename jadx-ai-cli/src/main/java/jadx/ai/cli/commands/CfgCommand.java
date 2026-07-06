@@ -10,7 +10,9 @@ import jadx.ai.cli.output.JsonOutput;
 import jadx.api.JadxDecompiler;
 import jadx.api.JavaClass;
 import jadx.api.JavaMethod;
+import jadx.core.dex.nodes.MethodNode;
 import jadx.core.utils.DotGraphUtils;
+import jadx.core.utils.exceptions.DecodeException;
 
 @Command(name = "cfg", description = "Generate control flow graph for a method")
 public class CfgCommand extends AbstractCommand {
@@ -24,7 +26,7 @@ public class CfgCommand extends AbstractCommand {
     @Option(names = {"--cfg-type"}, description = "CFG type: basic, raw, region", defaultValue = "basic")
     protected String cfgType;
 
-    @Option(names = {"--format"}, description = "Output format: dot, text", defaultValue = "dot")
+    @Option(names = {"--cfg-format"}, description = "CFG serialization: dot, text", defaultValue = "dot")
     protected String outputFormat;
 
     @Override
@@ -47,10 +49,17 @@ public class CfgCommand extends AbstractCommand {
             return JsonOutput.error("MethodNotFound", "Method not found: " + methodName);
         }
 
+        // The method node's basic blocks / instructions only exist after the decompilation
+        // passes (BlockSplitter, region maker, ...) have run. A freshly-loaded decompiler has
+        // not processed any method yet, so force the parent class through decompilation first —
+        // otherwise dumpToString() sees null blocks AND null instructions and always fails.
+        MethodNode mthNode = method.getMethodNode();
+        ensureProcessed(mthNode);
+
         boolean useRegions = "region".equals(cfgType);
         boolean rawInsn = "raw".equals(cfgType);
         DotGraphUtils utils = new DotGraphUtils(useRegions, rawInsn);
-        String dotGraph = utils.dumpToString(method.getMethodNode());
+        String dotGraph = utils.dumpToString(mthNode);
         if (dotGraph == null) {
             return JsonOutput.error("NoGraph", "Could not generate CFG (method may have no basic blocks)");
         }
@@ -62,6 +71,25 @@ public class CfgCommand extends AbstractCommand {
         result.put("format", outputFormat);
         result.put("graph", dotGraph);
         return JsonOutput.ok(result);
+    }
+
+    /**
+     * Force the method through enough of the pipeline that its basic blocks (or at least raw
+     * instructions) are populated. Decompiling the parent class runs the block-splitting and
+     * region passes; if that still leaves no blocks (e.g. abstract/native), a bare load() at
+     * least yields the instruction list for the single-block fallback in dumpToString().
+     */
+    private static void ensureProcessed(MethodNode mth) {
+        try {
+            if (mth.getBasicBlocks() == null) {
+                mth.getParentClass().decompile();
+            }
+            if (mth.getBasicBlocks() == null && mth.getInstructions() == null) {
+                mth.load();
+            }
+        } catch (DecodeException | RuntimeException e) {
+            // best-effort: dumpToString() will report NoGraph if blocks are still absent
+        }
     }
 
     @Override

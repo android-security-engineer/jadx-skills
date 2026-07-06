@@ -289,7 +289,7 @@ public class HookCommand extends AbstractCommand {
 
 	private String buildXposedFieldGetter(JavaField f, boolean isKotlin) {
 		String rawFieldName = f.getRawName() != null ? f.getRawName() : f.getName();
-		boolean isStatic = f.getAccessFlags().contains("static");
+		boolean isStatic = f.getAccessFlags().isStatic();
 		String staticStr = isStatic ? "Static" : "";
 		String typeStr = f.getType().toString();
 		String typeSuffix = mapPrimitiveType(typeStr);

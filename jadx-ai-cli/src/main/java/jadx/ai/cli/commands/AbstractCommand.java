@@ -24,7 +24,7 @@ public abstract class AbstractCommand implements Runnable {
 
 	protected JadxArgs jadxArgs;
 
-	@Parameters(index = "0", description = "Input file (APK, DEX, JAR, AAR, or class)")
+	@Parameters(index = "0", arity = "0..1", description = "Input file (APK, DEX, JAR, AAR, or class)")
 	protected File inputFile;
 
 	@Option(names = { "--format" }, description = "Output format: json (default) or plain", defaultValue = "json")
@@ -166,6 +166,15 @@ public abstract class AbstractCommand implements Runnable {
 	)
 	protected String securityFlagsStr;
 
+	@Option(
+			names = { "--cache-mode" },
+			description = "Decompiled-code cache location: MEMORY (default) or DISK. "
+					+ "DISK spills decompiled sources to a sibling <input>.jadx.cache/ dir to cut memory "
+					+ "and reuse results across invocations.",
+			defaultValue = "MEMORY"
+	)
+	protected String cacheMode = "MEMORY";
+
 	private static final Gson GSON = new GsonBuilder()
 			.setPrettyPrinting()
 			.disableHtmlEscaping()
@@ -173,6 +182,18 @@ public abstract class AbstractCommand implements Runnable {
 
 	@Override
 	public void run() {
+		// Phase 0: Commands that don't need a decompiler (e.g. external-tool adapters)
+		// run directly without loading an APK.
+		if (!requiresDecompiler()) {
+			try {
+				Object result = execute(null);
+				outputResult(result, System.out);
+			} catch (Exception e) {
+				outputResult(JsonOutput.error(e.getClass().getSimpleName(), e.getMessage()), System.err);
+			}
+			return;
+		}
+
 		// Phase 1: Try daemon mode
 		if (inputFile != null && !isDaemonCommand()) {
 			DaemonClient daemonClient = new DaemonClient();
@@ -191,6 +212,11 @@ public abstract class AbstractCommand implements Runnable {
 		}
 
 		// Phase 2: Local mode (original behavior)
+		if (inputFile == null) {
+			outputResult(JsonOutput.error("MissingInput",
+					"Input file (APK, DEX, JAR, AAR, or class) is required"), System.err);
+			return;
+		}
 		JadxDecompiler decompiler = null;
 		try {
 			this.jadxArgs = new JadxArgs();
@@ -276,6 +302,8 @@ public abstract class AbstractCommand implements Runnable {
 			}
 
 			decompiler = new JadxDecompiler(jadxArgs);
+			jadx.ai.cli.cache.CacheSupport.install(decompiler,
+					jadx.ai.cli.cache.CacheSupport.parseMode(cacheMode), inputFile);
 			decompiler.load();
 
 			Object result = execute(decompiler);
@@ -291,6 +319,23 @@ public abstract class AbstractCommand implements Runnable {
 	}
 
 	protected abstract Object execute(JadxDecompiler decompiler) throws Exception;
+
+	/**
+	 * Whether this command needs a loaded {@link JadxDecompiler}. Decompiler-backed
+	 * commands (the default) get a loaded instance passed to {@link #execute}. External-tool
+	 * adapters override this to return false; they receive {@code null} and must not touch it.
+	 */
+	protected boolean requiresDecompiler() {
+		return true;
+	}
+
+	/**
+	 * Populate this command's option fields from a transport-supplied args map (daemon/MCP/server).
+	 * Subclasses override to map their own fields, so the unmarshalling logic lives in one place
+	 * instead of being duplicated across each dispatcher. Default is a no-op.
+	 */
+	protected void applyArgs(Map<String, Object> args) {
+	}
 
 	protected void outputResult(Object data, PrintStream out) {
 		if ("json".equals(format)) {

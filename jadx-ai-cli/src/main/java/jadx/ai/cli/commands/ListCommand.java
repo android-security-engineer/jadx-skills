@@ -32,8 +32,50 @@ public class ListCommand extends AbstractCommand {
 	@Option(names = { "--with-inners" }, description = "Include inner classes in listing")
 	protected boolean withInners;
 
+	@Option(names = { "--limit" }, description = "Maximum number of results (0 = no limit)", defaultValue = "0")
+	protected int limit = 0;
+
+	@Option(
+			names = { "--use-index" },
+			description = "Answer `list -t classes` from the on-disk symbol index (built by `index build`) "
+					+ "without loading the decompiler. For other list types it warms the index as a "
+					+ "side-effect. Falls back to the decompiler when no valid index exists."
+	)
+	protected boolean useIndex;
+
+	/**
+	 * Skip loading the decompiler when {@code --use-index} is set and a valid index can serve the request
+	 * (currently {@code -t classes}). Every other case loads the decompiler as usual, preserving behaviour.
+	 */
+	@Override
+	protected boolean requiresDecompiler() {
+		return !canUseIndex();
+	}
+
+	private boolean canUseIndex() {
+		if (!useIndex || inputFile == null || listType == null) {
+			return false;
+		}
+		if (!listType.equalsIgnoreCase("classes")) {
+			return false;
+		}
+		return indexStore().isValid();
+	}
+
+	private jadx.ai.cli.index.SymbolIndexStore indexStore() {
+		return jadx.ai.cli.index.SymbolIndexStore.forInput(inputFile);
+	}
+
 	@Override
 	protected Object execute(JadxDecompiler decompiler) throws Exception {
+		if (decompiler == null) {
+			// Index fast-path: a valid index is present and the list type is index-serviceable.
+			return listClassesViaIndex();
+		}
+		// Warm the index whenever the decompiler had to load with --use-index, so later opens reuse it.
+		if (useIndex && inputFile != null) {
+			autoBuildIndex(decompiler);
+		}
 		switch (listType.toLowerCase()) {
 			case "packages":
 				return listPackages(decompiler);
@@ -66,7 +108,7 @@ public class ListCommand extends AbstractCommand {
 				info.subPackageCount = pkg.getSubPackages().size();
 				results.add(info);
 			}
-			return JsonOutput.list(results);
+			return JsonOutput.list(cap(results));
 		}
 		List<String> packages = decompiler.getPackages()
 				.stream()
@@ -74,7 +116,53 @@ public class ListCommand extends AbstractCommand {
 				.filter(p -> packageName == null || p.startsWith(packageName))
 				.sorted()
 				.collect(Collectors.toList());
-		return JsonOutput.list(packages);
+		return JsonOutput.list(cap(packages));
+	}
+
+	/**
+	 * Answer {@code list -t classes} by streaming the on-disk index (no decompiler loaded). The class
+	 * table stores [full, simple, pkg, raw, isInner, access], so every {@link ClassInfo} field is
+	 * reproduced exactly — including {@code isInner}/{@code accessStr} — for full parity with the
+	 * decompiler path. The {@code isInner} column also lets {@code --with-inners} be honoured faithfully.
+	 */
+	private Object listClassesViaIndex() throws Exception {
+		jadx.ai.cli.index.SymbolIndexStore store = indexStore();
+		List<ClassInfo> results = new ArrayList<>();
+		for (jadx.ai.cli.index.SymbolIndexStore.Row row : store.query(
+				jadx.ai.cli.index.SymbolIndexStore.Kind.CLASS,
+				c -> {
+					boolean inner = "true".equals(c.length > 4 ? c[4] : "false");
+					if (!withInners && inner) {
+						return false;
+					}
+					String pkg = c.length > 2 ? c[2] : "";
+					return packageName == null || (pkg != null && pkg.startsWith(packageName));
+				},
+				Integer.MAX_VALUE)) {
+			ClassInfo info = new ClassInfo();
+			info.fullName = row.col(0);
+			info.simpleName = row.col(1);
+			info.packageName = row.col(2);
+			info.isInner = "true".equals(row.col(4));
+			info.accessStr = row.col(5);
+			results.add(info);
+		}
+		return JsonOutput.list(cap(results));
+	}
+
+	/**
+	 * Persist the symbol index (symbols only, no strings) as a side-effect of a decompiler-backed run so
+	 * subsequent invocations can answer from disk. Best-effort: never affects the current result.
+	 */
+	private void autoBuildIndex(JadxDecompiler decompiler) {
+		try {
+			jadx.ai.cli.index.SymbolIndexStore store = indexStore();
+			if (store.needsRebuild(false)) {
+				store.build(decompiler, false);
+			}
+		} catch (Exception e) {
+			// Index is an optimization; the list is still fully answered from the decompiler.
+		}
 	}
 
 	private Object listClasses(JadxDecompiler decompiler) {
@@ -92,7 +180,7 @@ public class ListCommand extends AbstractCommand {
 			info.accessStr = cls.getAccessInfo().toString();
 			results.add(info);
 		}
-		return JsonOutput.list(results);
+		return JsonOutput.list(cap(results));
 	}
 
 	private Object listMethods(JadxDecompiler decompiler) {
@@ -110,7 +198,7 @@ public class ListCommand extends AbstractCommand {
 			info.returnType = m.getReturnType().toString();
 			results.add(info);
 		}
-		return JsonOutput.list(results);
+		return JsonOutput.list(cap(results));
 	}
 
 	private Object listFields(JadxDecompiler decompiler) {
@@ -128,7 +216,19 @@ public class ListCommand extends AbstractCommand {
 			info.type = f.getType().toString();
 			results.add(info);
 		}
-		return JsonOutput.list(results);
+		return JsonOutput.list(cap(results));
+	}
+
+	/**
+	 * Apply {@code --limit} (0 = no limit) to a result list. Caps large listings (a big APK can have
+	 * tens of thousands of classes) so the MCP/CLI consumer isn't flooded; the {@code jadx_list} MCP
+	 * tool declares {@code limit} and {@code CommandDispatch.list} now wires it through.
+	 */
+	private <T> List<T> cap(List<T> results) {
+		if (limit <= 0 || results.size() <= limit) {
+			return results;
+		}
+		return new ArrayList<>(results.subList(0, limit));
 	}
 
 	static class ClassInfo {
